@@ -30,7 +30,7 @@ def generateNewLogPath(): #PA Thougths - if this is run between every single exp
     next_num = max(nums, default=0) + 1
     new_folder = DATA_PATH / f"{prefix}{next_num}"
     
-    print(f"Next folder will be: {new_folder}")
+    #print(f"Next folder will be: {new_folder}")
     # Optionally, actually create it:
     new_folder.mkdir(parents=True, exist_ok=False)
     return new_folder
@@ -59,6 +59,7 @@ class Experiment: #
         ### Experiment execution
         self.execPath = execPath
         self.logPath = generateNewLogPath() #
+        print(f"new log path is {self.logPath}")
     
     def setParam(self, name, value):
         match name: 
@@ -103,6 +104,7 @@ class Experiment: #
             case "inversionRound":
                 self.inversionRound = int(value)
 
+    #returns performance results for this run in numpy array [totalTime, setUpTime, simulationTime, timePerRound, reportingTime];
     def run(self):
         self.saveParams() #writes params to a file
         for repeat in range(self.repeats):
@@ -112,17 +114,30 @@ class Experiment: #
                 self.seed1 = int(random.rand()*10000)
                 self.seed2 = int(random.rand()*10000)
             try: 
-                subprocess.run( #run compiled simulation excecutable
+                capturedOutput = subprocess.run( #run compiled simulation excecutable
                 [self.execPath, str(self.payoffMatrix[0][0]), str(self.payoffMatrix[0][1]),
                 str(self.payoffMatrix[1][0]), str(self.payoffMatrix[1][1]),
                 str(self.gridN), str(self.res[0]), str(self.res[1]),
                 str(self.maxN), str(self.rounds), str(self.iters),
                 str(self.snaps), str(self.evolutionRate), str(self.mutationRate), 
                 str(self.evolutionChance), str(self.gridSeed), str(self.playSeed),
-                str(subPath)]
+                str(subPath)],capture_output=True,text=True
                 )
+                return self.parsePerfString(capturedOutput.stdout)
             except subprocess.CalledProcessError:
                 pass
+
+    #returns numpy array of [totalTime, setUpTime, simulationTime, timePerRound, reportingTime]
+    def parsePerfString(self, perfString):
+        perfTimes = np.zeros(5)
+        splitString = perfString.split(", ")
+        for i in range(len(splitString)):
+            perfTimes[i]=(splitString[i].split(": ")[1])
+        return perfTimes
+
+
+        
+
     
     def saveParams(self):
         with open(str(self.logPath/Path("params.csv")), "w") as f:
@@ -181,14 +196,20 @@ class ExperimentBuilder:
         return experiments
 
     def parameterRange(self, start, end, steps, param, paramDict=dict(), varySeed=False):
+        range = np.linspace(start, end, steps)
+        return self.parameterRangePreSet(range,param,paramDict,varySeed)
+    
+    def parameterRangePreSet(self, paramValueArray, param, paramDict=dict(), varySeed=False):
         if param == "payoffMatrix":
             print("Use payoffMatrixRange. No experiments created")
             return
-        range = np.linspace(start, end, steps)
+        if (len(paramValueArray)==0): 
+            print("no varying parameter. redirecting to fromParamDict")
+            return self.fromParamDict(paramDict)
         experiments = []
         gridSeed = random.rand()*10000
         playSeed = random.rand()*10000
-        for val in range:
+        for val in paramValueArray:
             if varySeed == True:
                 gridSeed = random.rand()*10000
                 playSeed = random.rand()*10000
@@ -206,9 +227,14 @@ class ExperimentBuilder:
             for exp in self.experiments:
                 f.write(f"{str(exp.logPath)}\n")
     
+    #returns 2d array. each row represents the results of one run of the simulation in form [totalTime, setUpTime, simulationTime, timePerRound, reportingTime]. each row is its own experiment
+    #each col is a different value to measure
     def runAll(self):
+        timeArrays = []
         for exp in self.experiments:
-            exp.run()
+            timeArrays.append(exp.run())
+        return np.vstack(timeArrays)
+        
 
 def load_csv(filename):
     data = np.loadtxt(filename, delimiter=',')
@@ -275,14 +301,90 @@ def superPlot(tracker="experiments.txt"):
     stateSpace4d(np.array(finalRules))
 
 
-builder = ExperimentBuilder("./sim")
-paramdict = {"repeats": 1, "rounds": 100000, "snaps": 10, "gridN": 128, "varySeed": False, 
+def generateNewLogPath(): #PA Thougths - if this is run between every single experiment (in something like sweeping) it is probably more expensive than it needs to be, espeically once the number of experiments grows. why can't you just keep a number and increment it.
+    # find all existing folders that match 'testN' pattern
+    existing = [d for d in DATA_PATH.iterdir() if d.is_dir() and d.name.startswith(prefix)] #existing is a list of path objects for folders in Data starting with exp
+
+    # extract the numeric suffixes 
+    nums = [] 
+    for d in existing:
+        suffix = d.name[len(prefix):]
+        if suffix.isdigit():
+            nums.append(int(suffix))
+
+    # pick the next available number
+    next_num = max(nums, default=0) + 1
+    new_folder = DATA_PATH / f"{prefix}{next_num}"
+    
+    print(f"Next folder will be: {new_folder}")
+    # Optionally, actually create it:
+    new_folder.mkdir(parents=True, exist_ok=False)
+    return new_folder
+
+def writePerfResults(perfResults,filePaths):
+    #originally, each row is one experiment and each col is a different way of measuring time. once transposed, each row is a different way of measuring time and each col is an experiment
+    transposed = perfResults.T #I know this has bad locality and I don't really care because it is just for reporting performance results
+    for i in range(len(filePaths)):
+        f=open(filePaths[i],'a')
+        for item in transposed[i]: #transposed[i] will give the results for that particular timing method 
+            f.write(f"{item}, ")
+        f.write('\n')
+        f.close()
+
+
+
+
+def perfFileStructure(independentVarVal, independentVarName, executableName):
+    timeTypes = ['totalTime', 'setUpTime', 'simulationTime', 'timePerRound', 'reportingTime']
+    perfPath = Path("./Perf")
+    perfPath.mkdir()
+    perfFilePaths = []
+    for i in range(len(timeTypes)):
+        file_path = perfPath / f"{timeTypes[i]}_{executableName[2:]}.csv"
+        perfFilePaths.append(file_path)
+        f=open(file_path,'w')
+        f.write(f"{independentVarName}\n")
+        for var in independentVarVal:
+            f.write(f"{var}, ")
+        f.write("\n")
+        f.close()
+    return perfFilePaths
+        
+
+        
+
+
+reps = 10
+independentVarVal = np.array([16,32,64])
+executables = ["./sim"]
+independentVarName = "gridN"
+paramdict = {"repeats": 1, "rounds": 100, "snaps": 10, "gridN": 128, "varySeed": False, 
                             "payoffMatrix": [[1,5],[0,3.3]], "inversionPercentage": 0.1,
                             "mutationRate": 0.005, "res": (2,2)} #goal gridN : 128
-exp = builder.fromParamDict(paramdict)
-#builder.resRange((1,1), (16,16), paramdict)
-#builder.fromParamDict(paramdict)
-builder.runAll()
-builder.experimentList()
-fromTracker()
+for executable in executables:
+    DATA_PATH = DATA_PATH/executable[2:]
+    DATA_PATH.mkdir(parents=True,exist_ok=False)
+
+    #exp = builder.fromParamDict(paramdict)
+    #builder.resRange((1,1), (16,16), paramdict)
+    #builder.fromParamDict(paramdict)
+
+    #running the performance tests reps time, writing results to files, and averaging
+
+    perfFilePaths = perfFileStructure(independentVarVal,independentVarName, executable)
+    averages = np.zeros((len(independentVarVal),5))
+    for i in range(reps):
+        DATA_PATH = DATA_PATH/f"{i}"
+        DATA_PATH.mkdir(parents=True,exist_ok=False)
+        builder = ExperimentBuilder(executable)
+        builder.parameterRangePreSet(independentVarVal, independentVarName)
+        perfResults = builder.runAll() #2d array. each row represents the results of one run of the simulation in form [totalTime, setUpTime, simulationTime, timePerRound, reportingTime] each col is a different experiement (potentially with diff params)
+        averages+=perfResults
+        builder.experimentList()
+        #fromTracker() 
+        writePerfResults(perfResults,perfFilePaths)
+        DATA_PATH = DATA_PATH.parent
+    averages/=reps
+    writePerfResults(averages,perfFilePaths)
+    DATA_PATH = DATA_PATH.parent
 #superPlot()
