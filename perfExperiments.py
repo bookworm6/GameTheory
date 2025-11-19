@@ -114,6 +114,7 @@ class Experiment: #
                 self.seed1 = int(random.rand()*10000)
                 self.seed2 = int(random.rand()*10000)
             try: 
+                print("CWD: ", os.getcwd())
                 capturedOutput = subprocess.run( #run compiled simulation excecutable
                 [self.execPath, str(self.payoffMatrix[0][0]), str(self.payoffMatrix[0][1]),
                 str(self.payoffMatrix[1][0]), str(self.payoffMatrix[1][1]),
@@ -121,7 +122,7 @@ class Experiment: #
                 str(self.maxN), str(self.rounds), str(self.iters),
                 str(self.snaps), str(self.evolutionRate), str(self.mutationRate), 
                 str(self.evolutionChance), str(self.gridSeed), str(self.playSeed),
-                str(subPath)],capture_output=True,text=True
+                str(subPath)],capture_output=True,text=True, check=True
                 )
                 return self.parsePerfString(capturedOutput.stdout)
             except subprocess.CalledProcessError:
@@ -356,7 +357,7 @@ def perfFileStructure(independentVarVal, independentVarName, executableName):
 
 reps = 10
 independentVarVal = np.array([16,32,64])
-executables = ["./sim"]
+executables = ["./simOneThread","./simMultiThread"]
 independentVarName = "gridN"
 paramdict = {"repeats": 1, "rounds": 100, "snaps": 10, "gridN": 128, "varySeed": False, 
                             "payoffMatrix": [[1,5],[0,3.3]], "inversionPercentage": 0.1,

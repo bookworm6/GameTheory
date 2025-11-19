@@ -1,6 +1,6 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simGlobalMRNoMultiThreading.cpp -o sim -pthread
+// Compile: g++ -O3 -std=c++17 simGlobalMRNoMultiThreading.cpp -o sim 
 // Run: ./sim
 //
 // Outputs CSV files:
@@ -36,6 +36,8 @@
 #include <unordered_set>
 #include <cstdlib>
 #include <memory>
+#include <array>
+
 using namespace std;
 
 /* ---------------------------

@@ -29,6 +29,8 @@
 #include <unordered_set>
 #include <cstdlib>
 #include <memory>
+#include <array>
+
 using namespace std;
 
 /* ---------------------------
