@@ -8,7 +8,7 @@ import matplotlib.gridspec as gridspec
 from matplotlib.widgets import CheckButtons
 import numpy as np
 
-timeType = "setUpTime" #options are "totalTime" "timePerRound" "simulationTime" "setUpTime" "reportingTime"
+timeType = "timePerRound" #options are "totalTime" "timePerRound" "simulationTime" "setUpTime" "reportingTime"
 files = glob.glob(f"Perf/{timeType}_*.csv")
 contents=[]
 names=[]

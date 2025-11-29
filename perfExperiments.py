@@ -338,7 +338,7 @@ def writePerfResults(perfResults,filePaths):
 def perfFileStructure(independentVarVal, independentVarName, executableName):
     timeTypes = ['totalTime', 'setUpTime', 'simulationTime', 'timePerRound', 'reportingTime']
     perfPath = Path("./Perf")
-    perfPath.mkdir()
+    perfPath.mkdir(exist_ok=True)
     perfFilePaths = []
     for i in range(len(timeTypes)):
         file_path = perfPath / f"{timeTypes[i]}_{executableName[2:]}.csv"
@@ -355,10 +355,10 @@ def perfFileStructure(independentVarVal, independentVarName, executableName):
         
 
 
-reps = 10
-independentVarVal = np.array([16,32,64])
+reps = 50
+independentVarVal = np.array([50,100,150,200,250,300,350,400])
 executables = ["./simOneThread","./simMultiThread"]
-independentVarName = "gridN"
+independentVarName = "rounds"
 paramdict = {"repeats": 1, "rounds": 100, "snaps": 10, "gridN": 128, "varySeed": False, 
                             "payoffMatrix": [[1,5],[0,3.3]], "inversionPercentage": 0.1,
                             "mutationRate": 0.005, "res": (2,2)} #goal gridN : 128
