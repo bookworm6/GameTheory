@@ -1,6 +1,6 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simGlobalMR.cpp -o sim -pthread
+// Compile: g++ -O3 -std=c++17 simGlobalMRFasterRNG.cpp -o simFasterRNGMultiThread -pthread
 // Run: ./sim
 //
 // Outputs CSV files:
@@ -16,6 +16,8 @@
 ./sim 1 5 0 3 64 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 5000
 
 */
+
+//This version I make it so that assigning matchups doesn't use sin and cos. 
 #define NOMINMAX
 #include <fstream>
 #include <thread>
@@ -37,6 +39,7 @@
 #include <cstdlib>
 #include <memory>
 #include <array>
+#include "RandomGeneratorPCG/pcg_random.hpp" //random number generator header library from https://www.pcg-random.org/download.html 
 using namespace std;
 
 /* ---------------------------
@@ -44,8 +47,8 @@ using namespace std;
    --------------------------- */
 
 using u64 = unsigned long long;
-std::mt19937_64 grid_rng;
-std::mt19937_64 global_rng;
+pcg32_fast grid_rng;
+pcg32_fast global_rng;
 
 double uniform01() {
     return std::uniform_real_distribution<double>(0.0, 1.0)(global_rng);
@@ -411,7 +414,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
 
         // Worker now receives thread id and seed; 
         auto worker = [&](int t_id, int startRow, int endRow) {
-            std::mt19937_64 local_rng(thread_seeds[t_id]); //Question: do you really need 64 bits of randomness? and/or could a thread use smaller parts of a random number before generating a new one. 
+            mt19937_64 local_rng(thread_seeds[t_id]); //Question: do you really need 64 bits of randomness? and/or could a thread use smaller parts of a random number before generating a new one. 
             std::uniform_real_distribution<double> unif(0.0, 1.0);
 
             auto local_uniform01 = [&](){ return unif(local_rng); };

@@ -356,9 +356,9 @@ def perfFileStructure(independentVarVal, independentVarName, executableName):
 
 
 reps = 50
-independentVarVal = np.array([50,100,150,200,250,300,350,400])
-executables = ["./simOneThread","./simMultiThread"]
-independentVarName = "rounds"
+independentVarVal = np.array([32,64,128])
+executables = ["./simOneThread","./simMultiThread","./simFasterRNGMultiThread"]
+independentVarName = "gridN"
 paramdict = {"repeats": 1, "rounds": 100, "snaps": 10, "gridN": 128, "varySeed": False, 
                             "payoffMatrix": [[1,5],[0,3.3]], "inversionPercentage": 0.1,
                             "mutationRate": 0.005, "res": (2,2)} #goal gridN : 128
@@ -378,7 +378,7 @@ for executable in executables:
         DATA_PATH = DATA_PATH/f"{i}"
         DATA_PATH.mkdir(parents=True,exist_ok=False)
         builder = ExperimentBuilder(executable)
-        builder.parameterRangePreSet(independentVarVal, independentVarName)
+        builder.parameterRangePreSet(independentVarVal, independentVarName,paramdict)
         perfResults = builder.runAll() #2d array. each row represents the results of one run of the simulation in form [totalTime, setUpTime, simulationTime, timePerRound, reportingTime] each col is a different experiement (potentially with diff params)
         averages+=perfResults
         builder.experimentList()
