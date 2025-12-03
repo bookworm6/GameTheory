@@ -39,6 +39,7 @@
 #include <cstdlib>
 #include <memory>
 #include <array>
+#include <bit>
 #include "RandomGeneratorPCG/pcg_random.hpp" //random number generator header library from https://www.pcg-random.org/download.html 
 using namespace std;
 
@@ -47,8 +48,46 @@ using namespace std;
    --------------------------- */
 
 using u64 = unsigned long long;
-pcg32_fast grid_rng;
-pcg32_fast global_rng;
+pcg32_fast grid_rng(1845283475928345784);
+pcg32_fast global_rng(9025494524435028475);
+
+uint32_t globalRandomNumber = global_rng();
+
+int numBitsRemaining = 32;
+
+void printBits (int toPrint){
+    std::cout << std::bitset<sizeof(toPrint) * 8>(toPrint) << "   ";
+}
+
+uint32_t getRandomBits(int numBits){
+    //sets the leftmost numBits of the globalRandomNumber to 0, and ignores them from now on. returns those leftmost bits as the least siginificant bits of return value. 
+    cout<<"getting "<<numBits<<" random bits. globalRandomNumber is ";
+    printBits(globalRandomNumber);
+    cout<<endl;
+    uint32_t finalBits=0;
+    if (numBitsRemaining<numBits){
+        finalBits = globalRandomNumber; //length of num bits left
+        numBits-=numBitsRemaining; //num bits that still need to be generated
+        finalBits=finalBits<<numBits; //those final bits become the more signicicant bits of the thing returned
+        globalRandomNumber=global_rng();//generating new bits
+        numBitsRemaining=32;
+        cout<< "generated new random number ("<<finalBits<<" used from old number) ";
+        printBits(globalRandomNumber);
+        cout<<endl;
+
+    }
+    uint32_t randomBits = globalRandomNumber>>(numBitsRemaining-numBits);
+    randomBits+=finalBits;
+    globalRandomNumber = globalRandomNumber-(randomBits<<(numBitsRemaining-numBits));
+    numBitsRemaining-=numBits;
+    cout<<"returning ";
+    printBits(randomBits);
+    cout<<endl;
+    return randomBits;
+
+
+}
+
 
 double uniform01() {
     return std::uniform_real_distribution<double>(0.0, 1.0)(global_rng);
@@ -667,59 +706,76 @@ void write_nonCumulative_csv(const vector<vector<vector<double>>> &ncs, const st
 main (testing)
 --------------------------- */
 
-int main(int argc, char** argv) {
-    auto setUpStartTime = std::chrono::high_resolution_clock::now();
-    if (argc < 6) {
-        cerr << "Usage: ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round\n";
-        return 1;
-    }
+int main() {
+    //globalRandomNumber = global_rng();
+    //globalRandomNumber = global_rng();
 
-    payoffMatrix = {
-        {atof(argv[1]), atof(argv[2])}, //atof interprets the strings as floats
-        {atof(argv[3]), atof(argv[4])}
-    };
+    cout<<"global random number is ";
+    printBits(globalRandomNumber);
+    cout<<endl;
+    //numBitsRemaining=32;
+
+    getRandomBits(32);
+    getRandomBits(3);
+    getRandomBits(16);
+    getRandomBits(16);
+    getRandomBits(32);
+
+    // cout<<"testing print bits. printing 45.   ";
+    // printBits(45);
+    // cout<<" should be 0000000000101101" << std::endl;
+    // auto setUpStartTime = std::chrono::high_resolution_clock::now();
+    // if (argc < 6) {
+    //     cerr << "Usage: ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round\n";
+    //     return 1;
+    // }
+
+    // payoffMatrix = {
+    //     {atof(argv[1]), atof(argv[2])}, //atof interprets the strings as floats
+    //     {atof(argv[3]), atof(argv[4])}
+    // };
 
 
-    int gridN = atoi(argv[5]); //atoi interterprets strings as integers
-    pair<int,int> res = {atoi(argv[6]),atoi(argv[7])}; //what exactly is res?
-    int maxN = atoi(argv[8]); //what is maxN? how does it relate to gridN
-    int rounds = atoi(argv[9]);
-    int iters = atoi(argv[10]);
-    int snaps = atoi(argv[11]);
+    // int gridN = atoi(argv[5]); //atoi interterprets strings as integers
+    // pair<int,int> res = {atoi(argv[6]),atoi(argv[7])}; //what exactly is res?
+    // int maxN = atoi(argv[8]); //what is maxN? how does it relate to gridN
+    // int rounds = atoi(argv[9]);
+    // int iters = atoi(argv[10]);
+    // int snaps = atoi(argv[11]);
 
-    double evolutionRate = atof(argv[12]); //what is evolution rate - it doesn't looke like it is ever used?
-    double mutationRate = atof(argv[13]); //mutation rate randomly changes also the strategies a bit every round
-    double evolutionChance = atof(argv[14]); //evolution Chance - change of adopting winner's strategy?
-    unsigned int gridSeed = (unsigned) std::atoi(argv[15]); //randomness for distributing agents
-    unsigned int playSeed = (unsigned) std::atoi(argv[16]); //randomness for playing
-    global_rng.seed(playSeed);
-    grid_rng.seed(gridSeed);
-    double inversionPercentage = atof(argv[17]);//0; //what is inversion percentage and inversion round?
-    int inversionRound = atoi(argv[18]);//1;
+    // double evolutionRate = atof(argv[12]); //what is evolution rate - it doesn't looke like it is ever used?
+    // double mutationRate = atof(argv[13]); //mutation rate randomly changes also the strategies a bit every round
+    // double evolutionChance = atof(argv[14]); //evolution Chance - change of adopting winner's strategy?
+    // unsigned int gridSeed = (unsigned) std::atoi(argv[15]); //randomness for distributing agents
+    // unsigned int playSeed = (unsigned) std::atoi(argv[16]); //randomness for playing
+    // global_rng.seed(playSeed);
+    // grid_rng.seed(gridSeed);
+    // double inversionPercentage = atof(argv[17]);//0; //what is inversion percentage and inversion round?
+    // int inversionRound = atoi(argv[18]);//1;
 
 
-    std::string path = argv[17];
+    // std::string path = argv[17];
 
-    AgentGrid grid = blankGrid(gridN, res, gridSeed, mutationRate);
+    // AgentGrid grid = blankGrid(gridN, res, gridSeed, mutationRate);
 
-    auto setUpEndTime = chrono::high_resolution_clock::now();
+    // auto setUpEndTime = chrono::high_resolution_clock::now();
 
-    TorusResult resu = torusTournament(grid, iters, rounds, snaps, evolutionRate, mutationRate, evolutionChance, inversionPercentage, inversionRound);
+    // TorusResult resu = torusTournament(grid, iters, rounds, snaps, evolutionRate, mutationRate, evolutionChance, inversionPercentage, inversionRound);
 
-    auto simulationEndTime = chrono::high_resolution_clock::now();
+    // auto simulationEndTime = chrono::high_resolution_clock::now();
 
-    write_scoreSnaps_csv(resu.scoreSnaps, path+"/scoreSnaps.csv");
-    write_totalScore_csv(resu.totalScore, path+"/totalScore.csv");
-    write_ruleSnaps_csv(resu.ruleSnaps, path+"/ruleSnaps.csv");
-    write_nonCumulative_csv(resu.nonCumulativeScoreSnaps, path+"/nonCumulativeScore.csv");
+    // write_scoreSnaps_csv(resu.scoreSnaps, path+"/scoreSnaps.csv");
+    // write_totalScore_csv(resu.totalScore, path+"/totalScore.csv");
+    // write_ruleSnaps_csv(resu.ruleSnaps, path+"/ruleSnaps.csv");
+    // write_nonCumulative_csv(resu.nonCumulativeScoreSnaps, path+"/nonCumulativeScore.csv");
 
-    auto reportingEndTime = chrono::high_resolution_clock::now();
-    std::chrono::duration<double> totalElapsedTime = reportingEndTime - setUpStartTime;
-    std::chrono::duration<double> setUpTime = setUpEndTime - setUpStartTime;
-    std::chrono::duration<double> simulationTime = simulationEndTime - setUpEndTime;
-    std::chrono::duration<double> reportingResultsTime = reportingEndTime - simulationEndTime;
+    // auto reportingEndTime = chrono::high_resolution_clock::now();
+    // std::chrono::duration<double> totalElapsedTime = reportingEndTime - setUpStartTime;
+    // std::chrono::duration<double> setUpTime = setUpEndTime - setUpStartTime;
+    // std::chrono::duration<double> simulationTime = simulationEndTime - setUpEndTime;
+    // std::chrono::duration<double> reportingResultsTime = reportingEndTime - simulationEndTime;
 
-    cout<< "TotalTime: " << totalElapsedTime.count()<<", SetUpTime: "<<setUpTime.count()<<", SimulationTime: "<<simulationTime.count()<<", TimePerIter: "<<simulationTime.count()/iters<<", ReportingTime: "<<reportingResultsTime.count()<<endl;
+    // cout<< "TotalTime: " << totalElapsedTime.count()<<", SetUpTime: "<<setUpTime.count()<<", SimulationTime: "<<simulationTime.count()<<", TimePerRound: "<<simulationTime.count()/rounds<<", ReportingTime: "<<reportingResultsTime.count()<<endl;
 
     return 0;
 }

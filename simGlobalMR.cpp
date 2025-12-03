@@ -1,6 +1,6 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simGlobalMR.cpp -o sim -pthread
+// Compile: g++ -O3 -std=c++17 simGlobalMR.cpp -o simMultiThread -pthread
 // Run: ./sim
 //
 // Outputs CSV files:
@@ -46,6 +46,7 @@ using namespace std;
 using u64 = unsigned long long;
 std::mt19937_64 grid_rng;
 std::mt19937_64 global_rng;
+
 
 double uniform01() {
     return std::uniform_real_distribution<double>(0.0, 1.0)(global_rng);
@@ -312,6 +313,11 @@ struct TorusResult {
 
 int flatten_index(int y, int x, int X) { return y*X + x; }
 
+static const pair<int,int> DIRS[8] = {
+    { 1, 0}, {-1, 0}, {0, 1}, {0,-1},
+    { 1, 1}, { 1,-1}, {-1, 1}, {-1,-1}
+};
+
 vector<vector<pair<int,int>>> pickOpponents(const AgentGrid &agentGrid) {
     int yLen = (int)agentGrid.size();
     int xLen = (int)agentGrid[0].size();
@@ -337,10 +343,7 @@ vector<vector<pair<int,int>>> pickOpponents(const AgentGrid &agentGrid) {
     return opponent;
 }
 
-static const pair<int,int> DIRS[8] = {
-    { 1, 0}, {-1, 0}, {0, 1}, {0,-1},
-    { 1, 1}, { 1,-1}, {-1, 1}, {-1,-1}
-};
+
 
 vector<vector<pair<int,int>>> pickOpponentsNew(const AgentGrid &agents) {
     int Y = agents.size();
@@ -676,6 +679,7 @@ int main(int argc, char** argv) {
         {atof(argv[3]), atof(argv[4])}
     };
 
+    
 
     int gridN = atoi(argv[5]); //atoi interterprets strings as integers
     pair<int,int> res = {atoi(argv[6]),atoi(argv[7])}; //what exactly is res?
@@ -716,7 +720,7 @@ int main(int argc, char** argv) {
     std::chrono::duration<double> simulationTime = simulationEndTime - setUpEndTime;
     std::chrono::duration<double> reportingResultsTime = reportingEndTime - simulationEndTime;
 
-    cout<< "TotalTime: " << totalElapsedTime.count()<<", SetUpTime: "<<setUpTime.count()<<", SimulationTime: "<<simulationTime.count()<<", TimePerRound: "<<simulationTime.count()/rounds<<", ReportingTime: "<<reportingResultsTime.count()<<endl;
+    cout<< "TotalTime: " << totalElapsedTime.count()<<", SetUpTime: "<<setUpTime.count()<<", SimulationTime: "<<simulationTime.count()<<", TimePerIter: "<<simulationTime.count()/iters<<", ReportingTime: "<<reportingResultsTime.count()<<endl;
 
     return 0;
 }

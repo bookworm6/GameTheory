@@ -8,14 +8,16 @@ import matplotlib.gridspec as gridspec
 from matplotlib.widgets import CheckButtons
 import numpy as np
 
-timeType = "simulationTime" #options are "totalTime" "timePerRound" "simulationTime" "setUpTime" "reportingTime"
+print("running")
+
+timeType = "simulationTime" #options are "totalTime" "timePerIter" "simulationTime" "setUpTime" "reportingTime"
 files = glob.glob(f"Perf/{timeType}_*.csv")
 contents=[]
 names=[]
 independentVars=[]
 averages=[]
 
-
+print("getting data")
 
 for file in files:
     fileName=file.rsplit("/",1)[-1]
@@ -48,7 +50,7 @@ for test in contents:
 for test in contents:
     averages.append(csvLineToList(test[-1]))
 
-
+print("about to plot")
 # Create figure and axis
 fig, ax = plt.subplots(figsize=(10, 6))
 plt.subplots_adjust(right=.7)
@@ -85,4 +87,6 @@ ax.set_ylabel("time")
 ax.set_title(f"{timeType} vs {independentVarName}")
 ax.grid(True)
 
+print("showing")
 plt.show()
+print("done")

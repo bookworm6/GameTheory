@@ -1,6 +1,6 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simGlobalMRNoMultiThreading.cpp -o sim 
+// Compile: g++ -O3 -std=c++17 simGlobalMRNoMultiThreading.cpp -o simOneThread
 // Run: ./sim
 //
 // Outputs CSV files:
@@ -659,7 +659,7 @@ int main(int argc, char** argv) {
     std::chrono::duration<double> simulationTime = simulationEndTime - setUpEndTime;
     std::chrono::duration<double> reportingResultsTime = reportingEndTime - simulationEndTime;
 
-    cout<< "TotalTime: " << totalElapsedTime.count()<<", SetUpTime: "<<setUpTime.count()<<", SimulationTime: "<<simulationTime.count()<<", TimePerRound: "<<simulationTime.count()/rounds<<", ReportingTime: "<<reportingResultsTime.count()<<endl;
+    cout<< "TotalTime: " << totalElapsedTime.count()<<", SetUpTime: "<<setUpTime.count()<<", SimulationTime: "<<simulationTime.count()<<", TimePerIter: "<<simulationTime.count()/iters<<", ReportingTime: "<<reportingResultsTime.count()<<endl;
 
     return 0;
 }
