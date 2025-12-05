@@ -47,8 +47,8 @@ using namespace std;
    --------------------------- */
 
 using u64 = unsigned long long;
-pcg32 grid_rng(1845283475928345784);
-pcg32 global_rng(9025494524435028475);
+pcg32_fast grid_rng(1845283475928345784);
+pcg32_fast global_rng(9025494524435028475);
 
 double uniform01() {
     return std::uniform_real_distribution<double>(0.0, 1.0)(global_rng);

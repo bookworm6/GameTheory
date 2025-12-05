@@ -1,6 +1,6 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simGlobalMRFasterRNG.cpp -o simFasterRNGMultiThread -pthread
+// Compile: g++ -O3 -std=c++17 simGlobalMRFasterRNGProfiling.cpp -o simFasterRNGMultiThread -pthread
 // Run: ./sim
 //
 // Outputs CSV files:
@@ -13,7 +13,7 @@
 
 /*run a version of this wim without the experiment py file using 
 ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round
-./sim 1 5 0 3 128 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 0
+./simFasterRNGMultiThread 1 5 0 3 128 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 0
 
 */
 
@@ -47,8 +47,8 @@ using namespace std;
    --------------------------- */
 
 using u64 = unsigned long long;
-pcg32 grid_rng(1845283475928345784);
-pcg32 global_rng(9025494524435028475);
+pcg32_fast grid_rng(1845283475928345784);
+pcg32_fast global_rng(9025494524435028475);
 
 double uniform01() {
     return std::uniform_real_distribution<double>(0.0, 1.0)(global_rng);
@@ -377,21 +377,7 @@ vector<vector<array<double,5>>> agentRuleSnapshot(const AgentGrid &agents) {
 }
 
 void multiThreadedMatchups(AgentGrid& agentGrid, int iters, int rounds, int snaps, int xLen, int yLen, 
-    vector<vector<vector<double>>>& scoreTracker_threads, vector<vector<vector<int>>>& playedTracker_threads, int nThreads ){
-    // int nThreads = std::min(static_cast<int>(std::thread::hardware_concurrency()), (int) yLen);
-    // if (nThreads < 1) nThreads = 1;
-
-    // // Create thread seeds deterministically using global_rng (seeded in main)
-    // vector<uint64_t> thread_seeds(nThreads);
-    // for (int t = 0; t < nThreads; ++t) {
-    //     thread_seeds[t] = global_rng(); // deterministic sequence
-    // }
-
-    // // Prepare per-thread accumulators
-    // vector<vector<vector<double>>> scoreTracker_threads(nThreads,
-    //     vector<vector<double>>(yLen, vector<double>(xLen, 0.0)));
-    // vector<vector<vector<int>>> playedTracker_threads(nThreads,
-    //     vector<vector<int>>(yLen, vector<int>(xLen, 0)));
+    vector<vector<vector<double>>>& scoreTracker_threads, vector<vector<vector<int>>>& playedTracker_threads, int nThreads, vector<uint64_t>& thread_seeds,vector<vector<pair<int,int>>>&matchups ){
 
     // Worker now receives thread id and seed; 
     auto worker = [&](int t_id, int startRow, int endRow) {
@@ -434,35 +420,36 @@ void multiThreadedMatchups(AgentGrid& agentGrid, int iters, int rounds, int snap
     };
 
 
-        int rowsPerThread = std::max(1, ( (int) yLen) / nThreads);
-        int row = 0;
-        vector<thread> threads;
-        for (int t = 0; t < nThreads; ++t) {
-            int startR = row;
-            int endR = std::min((int) yLen, row + rowsPerThread);
-            if (t == nThreads - 1) endR = yLen;
-            threads.emplace_back(worker, t, startR, endR);
-            row = endR;
-        }
-        for (auto &th : threads) if (th.joinable()) th.join();
-        threads.clear();
-        return 
+    int rowsPerThread = std::max(1, ( (int) yLen) / nThreads);
+    int row = 0;
+    vector<thread> threads;
+    for (int t = 0; t < nThreads; ++t) {
+        int startR = row;
+        int endR = std::min((int) yLen, row + rowsPerThread);
+        if (t == nThreads - 1) endR = yLen;
+        threads.emplace_back(worker, t, startR, endR);
+        row = endR;
+    }
+    for (auto &th : threads) if (th.joinable()) th.join();
+    threads.clear();
+    return;  
 }
 
-void setUpThreadSeeds(vector<uint64_t>& threadseeds,){
-    for (int t = 0; t < thread_seeds.length(); ++t) {
-            thread_seeds[t] = global_rng(); // deterministic sequence
+void setUpThreadSeeds(vector<uint64_t>& threadseeds){
+    for (int t = 0; t < threadseeds.size(); ++t) {
+            threadseeds[t] = global_rng(); // deterministic sequence
     }
     return;
 }
 
-void syncingThreads(int xLen, int yLen,vector<vector<int>>& playedTracker, vector<vector<double>>& scoreTracker, vector<vector<double>>& totalScore){
+void syncingThreads(int xLen, int yLen,vector<vector<int>>& playedTracker, vector<vector<double>>& scoreTracker, 
+    vector<vector<double>>& totalScore,vector<vector<vector<double>>>& scoreTracker_threads,vector<vector<vector<int>>>& playedTracker_threads){
     for (int i=0;i<yLen;++i) for (int j=0;j<xLen;++j) {
             playedTracker[i][j] = 0;
             scoreTracker[i][j] = 0.0;
         }
 
-        for (int t=0; t<nThreads; ++t) {
+        for (int t=0; t<playedTracker_threads.size(); ++t) {
             for (int i=0;i<yLen;++i) {
                 for (int j=0;j<xLen;++j) {
                     playedTracker[i][j] += playedTracker_threads[t][i][j];
@@ -476,9 +463,11 @@ void syncingThreads(int xLen, int yLen,vector<vector<int>>& playedTracker, vecto
             if (playedTracker[i][j] > 0) scoreTracker[i][j] /= (double)playedTracker[i][j];
             totalScore[i][j] += scoreTracker[i][j];
         }
-    return
+    return;
 
 }
+
+void evolution (vector<vector<double>>& paddedScore,vector<vector<double>>& scoreTracker)
 
 TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snaps, float evolutionRate, //could agentGrid be passed by reference?
     float evolutionChance, float mutationRate, float inversionPercentage, int inversionRound) {
@@ -504,7 +493,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         int nThreads = std::min(static_cast<int>(std::thread::hardware_concurrency()), (int) yLen);
         if (nThreads < 1) nThreads = 1;
         vector<uint64_t> thread_seeds(nThreads);
-        setUpThreadSeeds();
+        setUpThreadSeeds(thread_seeds);
             
 
       
@@ -521,9 +510,9 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         vector<vector<vector<int>>> playedTracker_threads(nThreads,
             vector<vector<int>>(yLen, vector<int>(xLen, 0)));
         
-        multiThreadedMatchups(agentGrid, iters, rounds, snaps, xLen, yLen, scoreTracker_threads, playedTracker_threads,nThreads );
+        multiThreadedMatchups(agentGrid, iters, rounds, snaps, xLen, yLen, scoreTracker_threads, playedTracker_threads,nThreads,thread_seeds,matchups );
 
-        syncingThreads(xLen, yLen, playedTracker, scoreTracker, totalScore);
+        syncingThreads(xLen, yLen, playedTracker, scoreTracker, totalScore,scoreTracker_threads,playedTracker_threads);
         // zero out global trackers then sum thread-local results deterministically
         
 
@@ -544,6 +533,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         paddedScore[yLen+1][0] = scoreTracker[0][xLen-1];
 
         // decide evolution for each agent
+
         vector<double> evolveVec(N);
         for (int i=0;i<N;++i) evolveVec[i] = uniform01();
         double chance = 0.1;
