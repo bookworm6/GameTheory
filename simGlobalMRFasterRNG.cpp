@@ -13,7 +13,7 @@
 
 /*run a version of this wim without the experiment py file using 
 ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round
-./sim 1 5 0 3 64 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 5000
+./sim 1 5 0 3 128 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 0
 
 */
 
@@ -47,8 +47,8 @@ using namespace std;
    --------------------------- */
 
 using u64 = unsigned long long;
-pcg32_fast grid_rng;
-pcg32_fast global_rng;
+pcg32 grid_rng(1845283475928345784);
+pcg32 global_rng(9025494524435028475);
 
 double uniform01() {
     return std::uniform_real_distribution<double>(0.0, 1.0)(global_rng);

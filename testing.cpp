@@ -48,8 +48,10 @@ using namespace std;
    --------------------------- */
 
 using u64 = unsigned long long;
-pcg32_fast grid_rng(1845283475928345784);
-pcg32_fast global_rng(9025494524435028475);
+// pcg32 grid_rng(1845283475928345784);
+// pcg32 global_rng(9025494524435028475);
+pcg32 grid_rng(1);
+pcg32 global_rng(9);
 
 uint32_t globalRandomNumber = global_rng();
 
