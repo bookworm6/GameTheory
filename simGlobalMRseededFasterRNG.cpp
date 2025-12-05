@@ -1,6 +1,6 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simGlobalMRFasterRNG.cpp -o simFasterRNGMultiThread -pthread
+// Compile: g++ -O3 -std=c++17 simGlobalMRseededFasterRNG.cpp -o simFasterRNGMultiThread -pthread
 // Run: ./sim
 //
 // Outputs CSV files:
@@ -47,8 +47,8 @@ using namespace std;
    --------------------------- */
 
 using u64 = unsigned long long;
-pcg32_fast grid_rng;
-pcg32_fast global_rng;
+pcg32_fast grid_rng(1845283475928345784);
+pcg32_fast global_rng(9025494524435028475);
 
 double uniform01() {
     return std::uniform_real_distribution<double>(0.0, 1.0)(global_rng);
