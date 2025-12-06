@@ -37,7 +37,7 @@
 #include <cstdlib>
 #include <memory>
 #include <array>
-
+#include "RandomGeneratorPCG/pcg_random.hpp" //random number generator header library from https://www.pcg-random.org/download.html 
 using namespace std;
 
 /* ---------------------------
@@ -45,8 +45,8 @@ using namespace std;
    --------------------------- */
 
 using u64 = unsigned long long;
-std::mt19937_64 grid_rng;
-std::mt19937_64 global_rng;
+pcg32 grid_rng;
+pcg32 global_rng;
 
 double uniform01() {
     return std::uniform_real_distribution<double>(0.0, 1.0)(global_rng);

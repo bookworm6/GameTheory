@@ -356,9 +356,9 @@ def perfFileStructure(independentVarVal, independentVarName, executableName):
 
 
 reps = 50
-independentVarVal = np.array([1,2,4,8,15,30,50,75,100])
+independentVarVal = np.array([100,500,1000,1500])
 executables = ["./simReuseRandom","./simFasterRNGMultiThread","./simRNGMultiThreadPcg32", "./buggyFasterRNGMultiThread"]
-independentVarName = "iters"
+independentVarName = "rounds"
 paramdict = {"repeats": 1, "rounds": 100, "snaps": 10, "gridN": 128, "varySeed": False, 
                             "payoffMatrix": [[1,5],[0,3.3]], "inversionPercentage": 0.1,
                             "mutationRate": 0.005, "res": (2,2)} #goal gridN : 128

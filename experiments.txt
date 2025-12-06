@@ -1,9 +1,1 @@
-Data/buggyFasterRNGMultiThread/49/exp1
-Data/buggyFasterRNGMultiThread/49/exp2
-Data/buggyFasterRNGMultiThread/49/exp3
-Data/buggyFasterRNGMultiThread/49/exp4
-Data/buggyFasterRNGMultiThread/49/exp5
-Data/buggyFasterRNGMultiThread/49/exp6
-Data/buggyFasterRNGMultiThread/49/exp7
-Data/buggyFasterRNGMultiThread/49/exp8
-Data/buggyFasterRNGMultiThread/49/exp9
+Data/simOneThread/1/exp1
