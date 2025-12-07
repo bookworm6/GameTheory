@@ -1,6 +1,6 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simGlobalMRRNGpcg32.cpp -o simRNGMultiThreadPcg32 -pthread
+// Compile: g++ -O3 -std=c++17 simMultiThreadPcg32.cpp -o simMultiThreadPcg322 -pthread
 // Run: ./sim
 //
 // Outputs CSV files:

@@ -1,6 +1,6 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simGlobalMRReuseRandom.cpp -o simReuseRandom -pthread
+// Compile: g++ -O3 -std=c++17 simMultiThreadPcg32ReuseRandom.cpp -o simMultiThreadPcg32ReuseRandom -pthread
 // Run: ./sim
 //
 // Outputs CSV files:
@@ -450,25 +450,23 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
             
             //std::uniform_real_distribution<double> unif(0.0, 1.0);
 
-            bool generateNew=true;
-            int normalize = (-1)>>16; //this will be the value of 16 bits of ones. it will be computed at compile time. 
+            uint32_t normalize = ((uint32_t)(-1))>>16; //this will be the value of 16 bits of ones. it will be computed at compile time. 
             int firstHalf = 0;
             int secondHalf = 0;
             uint32_t currentRandomNumber = 0;
-            float toReturn; 
+            bool generateNew=true;
             auto local_uniform01 = [&](){
                 if (generateNew){
                     currentRandomNumber = local_rng();
                     firstHalf = currentRandomNumber>>16;
-                    secondHalf = currentRandomNumber>>16;
-                    toReturn = ((float)firstHalf)/((float)normalize); 
+                    secondHalf = (currentRandomNumber<<16)>>16;
                     generateNew = false;
+                    return ((float)firstHalf)/((float)normalize); 
                 }
                 else{
-                    toReturn = ((float)secondHalf)/((float)normalize); 
                     generateNew = true;
+                    return ((float)secondHalf)/((float)normalize); 
                 }
-                 return toReturn; 
                 };
 
             // local references to thread-local accumulators

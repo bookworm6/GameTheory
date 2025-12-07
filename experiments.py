@@ -14,6 +14,7 @@ from display import displayAsImage, heightmaps, stateSpace4d
 ######################################################
 DATA_PATH = Path("./Data")
 prefix = "exp"
+print ("running")
 #makes a new folder with the next available number
 def generateNewLogPath(): #PA Thougths - if this is run between every single experiment (in something like sweeping) it is probably more expensive than it needs to be, espeically once the number of experiments grows. why can't you just keep a number and increment it.
     # find all existing folders that match 'testN' pattern
@@ -276,7 +277,7 @@ def superPlot(tracker="experiments.txt"):
 
 
 builder = ExperimentBuilder("./sim")
-paramdict = {"repeats": 1, "rounds": 100, "snaps": 10, "gridN": 32, "varySeed": False, 
+paramdict = {"repeats": 1, "rounds": 100, "snaps": 10, "gridN": 128, "varySeed": False, 
                             "payoffMatrix": [[1,5],[0,3.3]], "inversionPercentage": 0.1,
                             "mutationRate": 0.005, "res": (2,2)} #goal gridN : 128
 exp = builder.fromParamDict(paramdict)
