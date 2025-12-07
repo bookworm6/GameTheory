@@ -47,11 +47,10 @@ using namespace std;
    --------------------------- */
 
 using u64 = unsigned long long;
-// pcg32_fast grid_rng(1);
-// pcg32_fast global_rng(2);
 
-pcg32_fast grid_rng(1845283475928345784);
-pcg32_fast global_rng(9025494524435028475);
+
+pcg32 grid_rng;
+pcg32 global_rng;
 
 uint32_t globalRandomNumber = global_rng();
 int numBitsRemaining = 32;
@@ -447,10 +446,30 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
 
         // Worker now receives thread id and seed; 
         auto worker = [&](int t_id, int startRow, int endRow) {
-            mt19937_64 local_rng(thread_seeds[t_id]); //Question: do you really need 64 bits of randomness? and/or could a thread use smaller parts of a random number before generating a new one. 
-            std::uniform_real_distribution<double> unif(0.0, 1.0);
+            pcg32 local_rng(thread_seeds[t_id]); //Question: do you really need 64 bits of randomness? and/or could a thread use smaller parts of a random number before generating a new one. 
+            
+            //std::uniform_real_distribution<double> unif(0.0, 1.0);
 
-            auto local_uniform01 = [&](){ return unif(local_rng); };
+            bool generateNew=true;
+            int normalize = (-1)>>16; //this will be the value of 16 bits of ones. it will be computed at compile time. 
+            int firstHalf = 0;
+            int secondHalf = 0;
+            uint32_t currentRandomNumber = 0;
+            float toReturn; 
+            auto local_uniform01 = [&](){
+                if (generateNew){
+                    currentRandomNumber = local_rng();
+                    firstHalf = currentRandomNumber>>16;
+                    secondHalf = currentRandomNumber>>16;
+                    toReturn = ((float)firstHalf)/((float)normalize); 
+                    generateNew = false;
+                }
+                else{
+                    toReturn = ((float)secondHalf)/((float)normalize); 
+                    generateNew = true;
+                }
+                 return toReturn; 
+                };
 
             // local references to thread-local accumulators
             auto &scoreTracker_local = scoreTracker_threads[t_id];
