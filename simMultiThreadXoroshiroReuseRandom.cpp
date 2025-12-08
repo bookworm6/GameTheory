@@ -1,6 +1,6 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simOrig.cpp -o simOrig -pthread
+// Compile: g++ -O3 -std=c++17 simMultiThreadXoroshiroReuseRandom.cpp -o simMultiThreadXoroshiroReuseRandom -pthread
 // Run: ./sim
 //
 // Outputs CSV files:
@@ -16,6 +16,8 @@
 ./sim 1 5 0 3 64 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 5000
 
 */
+
+//This version I make it so that assigning matchups doesn't use sin and cos. 
 #define NOMINMAX
 #include <fstream>
 #include <thread>
@@ -37,6 +39,7 @@
 #include <cstdlib>
 #include <memory>
 #include <array>
+#include "RandomGenerator/Xoshiro.hpp" 
 using namespace std;
 
 /* ---------------------------
@@ -44,8 +47,39 @@ using namespace std;
    --------------------------- */
 
 using u64 = unsigned long long;
-std::mt19937_64 grid_rng;
-std::mt19937_64 global_rng;
+
+
+XoshiroCpp::Xoroshiro128Plus grid_rng;
+XoshiroCpp::Xoroshiro128Plus global_rng;
+
+uint32_t globalRandomNumber = global_rng();
+int numBitsRemaining = 32;
+
+//TODO delete eventually. here for debugging
+void printBits (int toPrint){
+    std::cout << std::bitset<sizeof(toPrint) * 8>(toPrint) << "   ";
+}
+
+uint32_t getRandomBits(int numBits){
+    //sets the leftmost numBits of the globalRandomNumber to 0, and ignores them from now on. returns those leftmost bits as the least siginificant bits of return value. 
+    uint32_t finalBits=0;
+    if (numBitsRemaining<numBits){
+        finalBits = globalRandomNumber; //length of num bits left
+        numBits-=numBitsRemaining; //num bits that still need to be generated
+        finalBits=finalBits<<numBits; //those final bits become the more signicicant bits of the thing returned
+        globalRandomNumber=global_rng();//generating new bits
+        numBitsRemaining=32;
+
+    }
+    uint32_t randomBits = globalRandomNumber>>(numBitsRemaining-numBits);
+    randomBits+=finalBits;
+    globalRandomNumber = globalRandomNumber-(randomBits<<(numBitsRemaining-numBits));
+    numBitsRemaining-=numBits;
+    return randomBits;
+
+
+}
+
 
 
 double uniform01() {
@@ -313,6 +347,7 @@ struct TorusResult {
 
 int flatten_index(int y, int x, int X) { return y*X + x; }
 
+
 static const pair<int,int> DIRS[8] = {
     { 1, 0}, {-1, 0}, {0, 1}, {0,-1},
     { 1, 1}, { 1,-1}, {-1, 1}, {-1,-1}
@@ -321,27 +356,24 @@ static const pair<int,int> DIRS[8] = {
 vector<vector<pair<int,int>>> pickOpponents(const AgentGrid &agentGrid) {
     int yLen = (int)agentGrid.size();
     int xLen = (int)agentGrid[0].size();
-    int N = yLen * xLen; //PA note: N never changes does it? why not make it a field of agent grid? (or better yet, if you can get parameters at compile time, calculate it at compile time)
-    vector<double> angles(N);
-    for (int i=0;i<N;++i) angles[i] = uniform01() * 2.0 * M_PI; //list of randomly generated angles. Questions: do you really need to make this array here? why not calculate an angle and then put it in xs and xy directly
-    vector<int> xs(N), ys(N);
-    for (int i=0;i<N;++i) {
-        xs[i] = (int)round(cos(angles[i]));
-        ys[i] = (int)round(sin(angles[i])); //<xs[i],ys[i]> is a unit vector in direction angle[i]
-    }
+
     vector<vector<pair<int,int>>> opponent(yLen, vector<pair<int,int>>(xLen));
+
     for (int iy=0; iy<yLen; ++iy) {
         for (int ix=0; ix<xLen; ++ix) {
-            int id = iy * xLen + ix; //id maps an index in the 2d array to an index in angles, xs, and xy
-            int xLoc = (ix + xs[id]) % xLen; 
+            auto unitVector = DIRS[getRandomBits(3)]; //getRandomBits(3) will return 3 bits (ie an integer in range [0,7])
+            int xLoc = ix + unitVector.first; 
             if (xLoc < 0) xLoc += xLen;
-            int yLoc = (iy + ys[id]) % yLen;
+            if (xLoc>=xLen) xLoc-=xLen;
+            int yLoc = iy + unitVector.second; 
             if (yLoc < 0) yLoc += yLen;
+            if (yLoc>=yLen) yLoc-=yLen;
             opponent[iy][ix] = {xLoc, yLoc}; //why do all the angle stuff? why not just pick an element neighboring the cell with a certain probability (if you wanted you could calculate the probability of corner vs staight on)
         }
     }
     return opponent;
 }
+
 
 
 
@@ -370,6 +402,7 @@ vector<vector<array<double,5>>> agentRuleSnapshot(const AgentGrid &agents) {
     for(int i=0; i<Y; ++i){
         for(int j=0; j<X; ++j) {
             for(int k=0; k<4; ++k) snap[i][j][k] = agents[i][j]->rule[k];
+            //std::cout<<"mutation rate is "<<agents[i][j]->mutationRate<<"      ";
             snap[i][j][4] = agents[i][j]->mutationRate;
         }
     }
@@ -414,10 +447,25 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
 
         // Worker now receives thread id and seed; 
         auto worker = [&](int t_id, int startRow, int endRow) {
-            std::mt19937_64 local_rng(thread_seeds[t_id]); //Question: do you really need 64 bits of randomness? and/or could a thread use smaller parts of a random number before generating a new one. 
-            std::uniform_real_distribution<double> unif(0.0, 1.0);
+            XoshiroCpp::Xoroshiro128Plus local_rng(thread_seeds[t_id]); //Question: do you really need 64 bits of randomness? and/or could a thread use smaller parts of a random number before generating a new one. 
+            
+            //std::uniform_real_distribution<double> unif(0.0, 1.0);
+            
+            uint64_t normalize = ((uint64_t)(-1))>>48; //this will be the value of 16 bits of ones. it will be computed at compile time. 
+            uint64_t currentRandomNumber=0;
+            int bitsAvailable=0;
 
-            auto local_uniform01 = [&](){ return unif(local_rng); };
+            auto local_uniform01 = [&](){
+               if (bitsAvailable==0){
+                    currentRandomNumber = local_rng();
+                    bitsAvailable = 64;
+                }
+                int toReturn = ((uint64_t)currentRandomNumber)>>(bitsAvailable-16);
+                bitsAvailable-=16;
+                int shiftAmount = 64-bitsAvailable;
+                currentRandomNumber = ((uint64_t)(currentRandomNumber<<shiftAmount))>>shiftAmount;
+                return (float)toReturn/(float)normalize;
+            };
 
             // local references to thread-local accumulators
             auto &scoreTracker_local = scoreTracker_threads[t_id];
@@ -557,8 +605,8 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
                 newAgent->name = agentGrid[idy][idx]->name;
                 newAgent->rule = newRule;
                 newAgent->startMove = agentGrid[idy][idx]->startMove;
-                newAgent -> mutationRate = agentGrid[idy][idx]->mutationRate;
                 newAgent->prevMove = agentGrid[idy][idx]->prevMove;
+                newAgent -> mutationRate = agentGrid[idy][idx]->mutationRate;
                 newGrid[idy][idx] = newAgent;
             }
         }
@@ -670,6 +718,8 @@ main (testing)
 
 int main(int argc, char** argv) {
     auto setUpStartTime = std::chrono::high_resolution_clock::now();
+    
+
     if (argc < 6) {
         cerr << "Usage: ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round\n";
         return 1;
@@ -680,7 +730,6 @@ int main(int argc, char** argv) {
         {atof(argv[3]), atof(argv[4])}
     };
 
-    
 
     int gridN = atoi(argv[5]); //atoi interterprets strings as integers
     pair<int,int> res = {atoi(argv[6]),atoi(argv[7])}; //what exactly is res?
@@ -694,8 +743,8 @@ int main(int argc, char** argv) {
     double evolutionChance = atof(argv[14]); //evolution Chance - change of adopting winner's strategy?
     unsigned int gridSeed = (unsigned) std::atoi(argv[15]); //randomness for distributing agents
     unsigned int playSeed = (unsigned) std::atoi(argv[16]); //randomness for playing
-    global_rng.seed(playSeed);
-    grid_rng.seed(gridSeed);
+    // global_rng.seed(playSeed);
+    // grid_rng.seed(gridSeed);
     double inversionPercentage = atof(argv[17]);//0; //what is inversion percentage and inversion round?
     int inversionRound = atoi(argv[18]);//1;
 

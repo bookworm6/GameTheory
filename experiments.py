@@ -279,7 +279,7 @@ def superPlot(tracker="experiments.txt"):
 builder = ExperimentBuilder("./sim")
 paramdict = {"repeats": 1, "rounds": 100, "snaps": 10, "gridN": 128, "varySeed": False, 
                             "payoffMatrix": [[1,5],[0,3.3]], "inversionPercentage": 0.1,
-                            "mutationRate": 0.005, "res": (2,2)} #goal gridN : 128
+                            "mutationRate": 0.01, "res": (2,2)} #goal gridN : 128
 exp = builder.fromParamDict(paramdict)
 #builder.resRange((1,1), (16,16), paramdict)
 #builder.fromParamDict(paramdict)

@@ -1,6 +1,6 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simOrig.cpp -o simOrig -pthread
+// Compile: g++ -O3 -std=c++17 simNoMultiThreadXoroshiro.cpp -o simNoMultiThreadXoroshiro32
 // Run: ./sim
 //
 // Outputs CSV files:
@@ -13,7 +13,7 @@
 
 /*run a version of this wim without the experiment py file using 
 ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round
-./sim 1 5 0 3 64 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 5000
+./sim 1 5 0 3 32 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 5000
 
 */
 #define NOMINMAX
@@ -37,6 +37,7 @@
 #include <cstdlib>
 #include <memory>
 #include <array>
+#include "RandomGenerator/Xoshiro.hpp" 
 using namespace std;
 
 /* ---------------------------
@@ -44,9 +45,8 @@ using namespace std;
    --------------------------- */
 
 using u64 = unsigned long long;
-std::mt19937_64 grid_rng;
-std::mt19937_64 global_rng;
-
+XoshiroCpp::Xoroshiro128Plus grid_rng;
+XoshiroCpp::Xoroshiro128Plus global_rng;
 
 double uniform01() {
     return std::uniform_real_distribution<double>(0.0, 1.0)(global_rng);
@@ -313,11 +313,6 @@ struct TorusResult {
 
 int flatten_index(int y, int x, int X) { return y*X + x; }
 
-static const pair<int,int> DIRS[8] = {
-    { 1, 0}, {-1, 0}, {0, 1}, {0,-1},
-    { 1, 1}, { 1,-1}, {-1, 1}, {-1,-1}
-};
-
 vector<vector<pair<int,int>>> pickOpponents(const AgentGrid &agentGrid) {
     int yLen = (int)agentGrid.size();
     int xLen = (int)agentGrid[0].size();
@@ -343,7 +338,10 @@ vector<vector<pair<int,int>>> pickOpponents(const AgentGrid &agentGrid) {
     return opponent;
 }
 
-
+static const pair<int,int> DIRS[8] = {
+    { 1, 0}, {-1, 0}, {0, 1}, {0,-1},
+    { 1, 1}, { 1,-1}, {-1, 1}, {-1,-1}
+};
 
 vector<vector<pair<int,int>>> pickOpponentsNew(const AgentGrid &agents) {
     int Y = agents.size();
@@ -396,90 +394,32 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         vector<vector<int>> playedTracker(yLen, vector<int>(xLen, 0));
         vector<vector<double>> scoreTracker(yLen, vector<double>(xLen, 0.0));
 
-        // BEFORE launching threads: create deterministic thread seeds and decide nThreads
-        int nThreads = std::min(static_cast<int>(std::thread::hardware_concurrency()), (int) yLen);
-        if (nThreads < 1) nThreads = 1;
+        std::uniform_real_distribution<double> unif(0.0, 1.0);
+        
 
-        // Create thread seeds deterministically using global_rng (seeded in main)
-        vector<uint64_t> thread_seeds(nThreads);
-        for (int t = 0; t < nThreads; ++t) {
-            thread_seeds[t] = global_rng(); // deterministic sequence
-        }
+        //this is the main simulation loop. This SHOULD take the majority of the time
+        for (int idy = 0; idy < yLen; ++idy) {
+            for (int idx = 0; idx < xLen; ++idx) {
+                auto match = matchups[idy][idx];
+                auto a1 = agentGrid[idy][idx];
+                auto a2 = agentGrid[match.second][match.first];
 
-        // Prepare per-thread accumulators
-        vector<vector<vector<double>>> scoreTracker_threads(nThreads,
-            vector<vector<double>>(yLen, vector<double>(xLen, 0.0)));
-        vector<vector<vector<int>>> playedTracker_threads(nThreads,
-            vector<vector<int>>(yLen, vector<int>(xLen, 0)));
+                playedTracker[idy][idx] += 1;
+                playedTracker[match.second][match.first] += 1;
 
-        // Worker now receives thread id and seed; 
-        auto worker = [&](int t_id, int startRow, int endRow) {
-            std::mt19937_64 local_rng(thread_seeds[t_id]); //Question: do you really need 64 bits of randomness? and/or could a thread use smaller parts of a random number before generating a new one. 
-            std::uniform_real_distribution<double> unif(0.0, 1.0);
-
-            auto local_uniform01 = [&](){ return unif(local_rng); };
-
-            // local references to thread-local accumulators
-            auto &scoreTracker_local = scoreTracker_threads[t_id];
-            auto &playedTracker_local = playedTracker_threads[t_id];
-
-            for (int idy = startRow; idy < endRow; ++idy) {
-                for (int idx = 0; idx < xLen; ++idx) {
-                    auto match = matchups[idy][idx];
-                    auto a1 = agentGrid[idy][idx];
-                    auto a2 = agentGrid[match.second][match.first];
-
-                    // increment played count for both players in THREAD-LOCAL arrays
-                    playedTracker_local[idy][idx] += 1;
-                    playedTracker_local[match.second][match.first] += 1;
-
-                    // generate seeds for iterated plays using local_rng
-                    vector<double> seeds(2 * iters);
-                    for (int s = 0; s < 2*iters; ++s) seeds[s] = local_uniform01();
-
-                    for (int n = 0; n < iters; ++n) {
-                        unsigned long long a1prev = a1->prevMove;
-                        unsigned long long a2prev = a2->prevMove;
-                        int a1move = a1->playMove(a2prev, seeds[n], n);
-                        int a2move = a2->playMove(a1prev, seeds[n+iters], n);
-                        // accumulate into thread-local arrays
-                        scoreTracker_local[idy][idx] += payoffMatrix[a1move][a2move];
-                        scoreTracker_local[match.second][match.first] += payoffMatrix[a2move][a1move];
-                    }
-                    a1->reset();
-                    a2->reset();
+                for (int n = 0; n < iters; ++n) {
+                    unsigned long long a1prev = a1->prevMove;
+                    unsigned long long a2prev = a2->prevMove;
+                    int a1move = a1->playMove(a2prev, unif(global_rng), n);
+                    int a2move = a2->playMove(a1prev, unif(global_rng), n);
+                    // accumulate into thread-local arrays
+                    scoreTracker[idy][idx] += payoffMatrix[a1move][a2move];
+                    scoreTracker[match.second][match.first] += payoffMatrix[a2move][a1move];
                 }
+                a1->reset();
+                a2->reset();
             }
         };
-
-
-        int rowsPerThread = std::max(1, ( (int) yLen) / nThreads);
-        int row = 0;
-        vector<thread> threads;
-        for (int t = 0; t < nThreads; ++t) {
-            int startR = row;
-            int endR = std::min((int) yLen, row + rowsPerThread);
-            if (t == nThreads - 1) endR = yLen;
-            threads.emplace_back(worker, t, startR, endR);
-            row = endR;
-        }
-        for (auto &th : threads) if (th.joinable()) th.join();
-        threads.clear();
-
-        // zero out global trackers then sum thread-local results deterministically
-        for (int i=0;i<yLen;++i) for (int j=0;j<xLen;++j) {
-            playedTracker[i][j] = 0;
-            scoreTracker[i][j] = 0.0;
-        }
-
-        for (int t=0; t<nThreads; ++t) {
-            for (int i=0;i<yLen;++i) {
-                for (int j=0;j<xLen;++j) {
-                    playedTracker[i][j] += playedTracker_threads[t][i][j];
-                    scoreTracker[i][j] += scoreTracker_threads[t][i][j];
-                }
-            }
-        }
 
         // Normalize by playedTracker (avoid div by zero)
         for (int i=0;i<yLen;++i) for (int j=0;j<xLen;++j) {
@@ -680,7 +620,6 @@ int main(int argc, char** argv) {
         {atof(argv[3]), atof(argv[4])}
     };
 
-    
 
     int gridN = atoi(argv[5]); //atoi interterprets strings as integers
     pair<int,int> res = {atoi(argv[6]),atoi(argv[7])}; //what exactly is res?
@@ -694,8 +633,8 @@ int main(int argc, char** argv) {
     double evolutionChance = atof(argv[14]); //evolution Chance - change of adopting winner's strategy?
     unsigned int gridSeed = (unsigned) std::atoi(argv[15]); //randomness for distributing agents
     unsigned int playSeed = (unsigned) std::atoi(argv[16]); //randomness for playing
-    global_rng.seed(playSeed);
-    grid_rng.seed(gridSeed);
+    // global_rng.seed(playSeed);
+    // grid_rng.seed(gridSeed);
     double inversionPercentage = atof(argv[17]);//0; //what is inversion percentage and inversion round?
     int inversionRound = atoi(argv[18]);//1;
 
