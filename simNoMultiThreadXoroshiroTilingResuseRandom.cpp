@@ -1,6 +1,6 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simMultiThreadXoroshiroReuseRandomLessMemory.cpp -o simMultiThreadXoroshiroReuseRandom -pthread
+// Compile: g++ -O3 -std=c++17 simNoMultiThreadXoroshiroTilingResuseRandom.cpp -o simNoMultiThreadXoroshiroTilingResuseRandom
 // Run: ./sim
 //
 // Outputs CSV files:
@@ -13,11 +13,9 @@
 
 /*run a version of this wim without the experiment py file using 
 ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round
-./sim 1 5 0 3 64 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 5000
+./sim 1 5 0 3 32 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 5000
 
 */
-
-//This version I make it so that assigning matchups doesn't use sin and cos. 
 #define NOMINMAX
 #include <fstream>
 #include <thread>
@@ -47,40 +45,8 @@ using namespace std;
    --------------------------- */
 
 using u64 = unsigned long long;
-
-
 XoshiroCpp::Xoroshiro128Plus grid_rng;
 XoshiroCpp::Xoroshiro128Plus global_rng;
-
-uint32_t globalRandomNumber = global_rng();
-int numBitsRemaining = 32;
-
-//TODO delete eventually. here for debugging
-void printBits (int toPrint){
-    std::cout << std::bitset<sizeof(toPrint) * 8>(toPrint) << "   ";
-}
-
-uint32_t getRandomBits(int numBits){
-    //sets the leftmost numBits of the globalRandomNumber to 0, and ignores them from now on. returns those leftmost bits as the least siginificant bits of return value. 
-    uint32_t finalBits=0;
-    if (numBitsRemaining<numBits){
-        finalBits = globalRandomNumber; //length of num bits left
-        numBits-=numBitsRemaining; //num bits that still need to be generated
-        finalBits=finalBits<<numBits; //those final bits become the more signicicant bits of the thing returned
-        globalRandomNumber=global_rng();//generating new bits
-        numBitsRemaining=32;
-
-    }
-    uint32_t randomBits = globalRandomNumber>>(numBitsRemaining-numBits);
-    randomBits+=finalBits;
-    globalRandomNumber = globalRandomNumber-(randomBits<<(numBitsRemaining-numBits));
-    numBitsRemaining-=numBits;
-    return randomBits;
-
-
-}
-
-
 
 double uniform01() {
     return std::uniform_real_distribution<double>(0.0, 1.0)(global_rng);
@@ -217,16 +183,23 @@ struct Memory1 {
     Move startMove;
     Move prevMove;
     array<double,4> rule;
+    double score;
+    string name;
+    double mutationRate;
 
     Memory1(Move _start = COOP, double _mutationRate=0.0):
         startMove(_start),
         prevMove(startMove),
-        rule{0.0,0.0,0.0,0.0}
+        rule{0.0,0.0,0.0,0.0},
+        mutationRate(_mutationRate),
+        score(0.0),
+        name("MemoryN")
     {}
 
     virtual void startup(Move _start) {
         this->startMove = _start;
         this->prevMove = _start;
+        this->score = 0.0;
     }
 
     int playMove(int theirPrev, double seed, int roundNum) { //I wonder what the branch mispredictions are like
@@ -246,10 +219,13 @@ struct Memory1 {
     }
 
     void reset() {
+        score = 0.0;
         prevMove = startMove;
     }
 
-
+    virtual string repr() const {
+        return name;
+    }
 
     void setRule(const array<double, 4> &r) {
         rule[0] = r[0];
@@ -261,6 +237,7 @@ struct Memory1 {
 
 struct BLANK : public Memory1 {
     BLANK(Move start = COOP) : Memory1(start) {
+        name = "BLANK";
         rule[0] = 0.0;
         rule[1] = 0.0;
         rule[2] = 0.0;
@@ -268,6 +245,37 @@ struct BLANK : public Memory1 {
         startMove = start;
         prevMove = start;
     }
+};
+
+struct Random16{
+
+    uint64_t normalize; //this will be the value of 16 bits of ones. it will be computed at compile time. 
+    uint64_t currentRandomNumber;
+    bool generateNew;
+    int bitsAvailable;
+    XoshiroCpp::Xoroshiro128Plus local_rng;
+
+ 
+    Random16(int seed):
+        local_rng(seed){
+        normalize = ((uint64_t)(-1))>>48; //this will be the value of 16 bits of ones. it will be computed at compile time. 
+        currentRandomNumber = 0;
+        bitsAvailable=0;
+        
+    }
+
+    float generate (){
+        if (bitsAvailable==0){
+            currentRandomNumber = local_rng();
+            bitsAvailable = 64;
+        }
+        int toReturn = ((uint64_t)currentRandomNumber)>>(bitsAvailable-16);
+        bitsAvailable-=16;
+        int shiftAmount = 64-bitsAvailable;
+        currentRandomNumber = ((uint64_t)(currentRandomNumber<<shiftAmount))>>shiftAmount;
+        return (float)toReturn/(float)normalize;
+    }
+    
 };
 
 /* ---------------------------
@@ -314,6 +322,7 @@ AgentGrid blankGrid(int N, pair<int,int> res, unsigned seed = 0, double mutation
             if (ruleVals[k] > 1.0) ruleVals[k] = 1.0;
         }
         ag->setRule(ruleVals);
+        ag->mutationRate = mutationRate;//paramMaps[4][i][j];
         grid[i][j] = ag;
     }
     return grid;
@@ -335,35 +344,35 @@ struct TorusResult {
 
 int flatten_index(int y, int x, int X) { return y*X + x; }
 
-
-static const pair<int,int> DIRS[8] = {
-    { 1, 0}, {-1, 0}, {0, 1}, {0,-1},
-    { 1, 1}, { 1,-1}, {-1, 1}, {-1,-1}
-};
-
 vector<vector<pair<int,int>>> pickOpponents(const AgentGrid &agentGrid) {
     int yLen = (int)agentGrid.size();
     int xLen = (int)agentGrid[0].size();
-
+    int N = yLen * xLen; //PA note: N never changes does it? why not make it a field of agent grid? (or better yet, if you can get parameters at compile time, calculate it at compile time)
+    vector<double> angles(N);
+    for (int i=0;i<N;++i) angles[i] = uniform01() * 2.0 * M_PI; //list of randomly generated angles. Questions: do you really need to make this array here? why not calculate an angle and then put it in xs and xy directly
+    vector<int> xs(N), ys(N);
+    for (int i=0;i<N;++i) {
+        xs[i] = (int)round(cos(angles[i]));
+        ys[i] = (int)round(sin(angles[i])); //<xs[i],ys[i]> is a unit vector in direction angle[i]
+    }
     vector<vector<pair<int,int>>> opponent(yLen, vector<pair<int,int>>(xLen));
-
     for (int iy=0; iy<yLen; ++iy) {
         for (int ix=0; ix<xLen; ++ix) {
-            auto unitVector = DIRS[getRandomBits(3)]; //getRandomBits(3) will return 3 bits (ie an integer in range [0,7])
-            int xLoc = ix + unitVector.first; 
+            int id = iy * xLen + ix; //id maps an index in the 2d array to an index in angles, xs, and xy
+            int xLoc = (ix + xs[id]) % xLen; 
             if (xLoc < 0) xLoc += xLen;
-            if (xLoc>=xLen) xLoc-=xLen;
-            int yLoc = iy + unitVector.second; 
+            int yLoc = (iy + ys[id]) % yLen;
             if (yLoc < 0) yLoc += yLen;
-            if (yLoc>=yLen) yLoc-=yLen;
             opponent[iy][ix] = {xLoc, yLoc}; //why do all the angle stuff? why not just pick an element neighboring the cell with a certain probability (if you wanted you could calculate the probability of corner vs staight on)
         }
     }
     return opponent;
 }
 
-
-
+static const pair<int,int> DIRS[8] = {
+    { 1, 0}, {-1, 0}, {0, 1}, {0,-1},
+    { 1, 1}, { 1,-1}, {-1, 1}, {-1,-1}
+};
 
 vector<vector<pair<int,int>>> pickOpponentsNew(const AgentGrid &agents) {
     int Y = agents.size();
@@ -382,7 +391,7 @@ vector<vector<pair<int,int>>> pickOpponentsNew(const AgentGrid &agents) {
     return opp;
 }
 
-vector<vector<array<double,5>>> agentRuleSnapshot(const AgentGrid &agents,float mutationRate) {
+vector<vector<array<double,5>>> agentRuleSnapshot(const AgentGrid &agents) {
     int Y = agents.size();
     int X = agents[0].size();
 
@@ -390,8 +399,7 @@ vector<vector<array<double,5>>> agentRuleSnapshot(const AgentGrid &agents,float 
     for(int i=0; i<Y; ++i){
         for(int j=0; j<X; ++j) {
             for(int k=0; k<4; ++k) snap[i][j][k] = agents[i][j]->rule[k];
-            //std::cout<<"mutation rate is "<<mutationRate<<"    ";
-            snap[i][j][4] = mutationRate;
+            snap[i][j][4] = agents[i][j]->mutationRate;
         }
     }
     return snap;
@@ -417,105 +425,39 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         vector<vector<int>> playedTracker(yLen, vector<int>(xLen, 0));
         vector<vector<double>> scoreTracker(yLen, vector<double>(xLen, 0.0));
 
-        // BEFORE launching threads: create deterministic thread seeds and decide nThreads
-        int nThreads = std::min(static_cast<int>(std::thread::hardware_concurrency()), (int) yLen);
-        if (nThreads < 1) nThreads = 1;
+        Random16 generate16(10);
+        
 
-        // Create thread seeds deterministically using global_rng (seeded in main)
-        vector<uint64_t> thread_seeds(nThreads);
-        for (int t = 0; t < nThreads; ++t) {
-            thread_seeds[t] = global_rng(); // deterministic sequence
-        }
+        //this is the main simulation loop. This SHOULD take the majority of the time
+        int tileSize = 32;
+        for (int tiley=0;tiley<yLen;tiley+=tileSize){
+            for (int tilex=0;tilex<xLen;tilex+=tileSize){
+                for (int idy=tiley; idy<(tiley+tileSize);idy++){
+                    for(int idx=tilex;idx<(tilex+tileSize);idx++){
+                        auto match = matchups[idy][idx];
+                        auto a1 = agentGrid[idy][idx];
+                        auto a2 = agentGrid[match.second][match.first];
 
-        // Prepare per-thread accumulators
-        vector<vector<vector<double>>> scoreTracker_threads(nThreads,
-            vector<vector<double>>(yLen, vector<double>(xLen, 0.0)));
-        vector<vector<vector<int>>> playedTracker_threads(nThreads,
-            vector<vector<int>>(yLen, vector<int>(xLen, 0)));
+                        playedTracker[idy][idx] += 1;
+                        playedTracker[match.second][match.first] += 1;
 
-        // Worker now receives thread id and seed; 
-        auto worker = [&](int t_id, int startRow, int endRow) {
-            XoshiroCpp::Xoroshiro128Plus local_rng(thread_seeds[t_id]); //Question: do you really need 64 bits of randomness? and/or could a thread use smaller parts of a random number before generating a new one. 
-            
-            //std::uniform_real_distribution<double> unif(0.0, 1.0);
-            
-            uint64_t normalize = ((uint64_t)(-1))>>48; //this will be the value of 16 bits of ones. it will be computed at compile time. 
-            uint64_t currentRandomNumber=0;
-            int bitsAvailable=0;
+                        for (int n = 0; n < iters; ++n) {
+                            unsigned long long a1prev = a1->prevMove;
+                            unsigned long long a2prev = a2->prevMove;
+                            int a1move = a1->playMove(a2prev, generate16.generate(), n);
+                            int a2move = a2->playMove(a1prev, generate16.generate(), n);
+                            // accumulate into thread-local arrays
+                            scoreTracker[idy][idx] += payoffMatrix[a1move][a2move];
+                            scoreTracker[match.second][match.first] += payoffMatrix[a2move][a1move];
+                        }
+                        a1->reset();
+                        a2->reset();
 
-            auto local_uniform01 = [&](){
-               if (bitsAvailable==0){
-                    currentRandomNumber = local_rng();
-                    bitsAvailable = 64;
-                }
-                int toReturn = ((uint64_t)currentRandomNumber)>>(bitsAvailable-16);
-                bitsAvailable-=16;
-                int shiftAmount = 64-bitsAvailable;
-                currentRandomNumber = ((uint64_t)(currentRandomNumber<<shiftAmount))>>shiftAmount;
-                return (float)toReturn/(float)normalize;
-            };
-
-            // local references to thread-local accumulators
-            auto &scoreTracker_local = scoreTracker_threads[t_id];
-            auto &playedTracker_local = playedTracker_threads[t_id];
-
-            for (int idy = startRow; idy < endRow; ++idy) {
-                for (int idx = 0; idx < xLen; ++idx) {
-                    auto match = matchups[idy][idx];
-                    auto a1 = agentGrid[idy][idx];
-                    auto a2 = agentGrid[match.second][match.first];
-
-                    // increment played count for both players in THREAD-LOCAL arrays
-                    playedTracker_local[idy][idx] += 1;
-                    playedTracker_local[match.second][match.first] += 1;
-
-                    // generate seeds for iterated plays using local_rng
-                    vector<double> seeds(2 * iters);
-                    for (int s = 0; s < 2*iters; ++s) seeds[s] = local_uniform01();
-
-                    for (int n = 0; n < iters; ++n) {
-                        unsigned long long a1prev = a1->prevMove;
-                        unsigned long long a2prev = a2->prevMove;
-                        int a1move = a1->playMove(a2prev, seeds[n], n);
-                        int a2move = a2->playMove(a1prev, seeds[n+iters], n);
-                        // accumulate into thread-local arrays
-                        scoreTracker_local[idy][idx] += payoffMatrix[a1move][a2move];
-                        scoreTracker_local[match.second][match.first] += payoffMatrix[a2move][a1move];
                     }
-                    a1->reset();
-                    a2->reset();
-                }
-            }
-        };
-
-
-        int rowsPerThread = std::max(1, ( (int) yLen) / nThreads);
-        int row = 0;
-        vector<thread> threads;
-        for (int t = 0; t < nThreads; ++t) {
-            int startR = row;
-            int endR = std::min((int) yLen, row + rowsPerThread);
-            if (t == nThreads - 1) endR = yLen;
-            threads.emplace_back(worker, t, startR, endR);
-            row = endR;
-        }
-        for (auto &th : threads) if (th.joinable()) th.join();
-        threads.clear();
-
-        // zero out global trackers then sum thread-local results deterministically
-        for (int i=0;i<yLen;++i) for (int j=0;j<xLen;++j) {
-            playedTracker[i][j] = 0;
-            scoreTracker[i][j] = 0.0;
-        }
-
-        for (int t=0; t<nThreads; ++t) {
-            for (int i=0;i<yLen;++i) {
-                for (int j=0;j<xLen;++j) {
-                    playedTracker[i][j] += playedTracker_threads[t][i][j];
-                    scoreTracker[i][j] += scoreTracker_threads[t][i][j];
                 }
             }
         }
+        
 
         // Normalize by playedTracker (avoid div by zero)
         for (int i=0;i<yLen;++i) for (int j=0;j<xLen;++j) {
@@ -526,7 +468,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         // Evolution
         AgentGrid newGrid = agentGrid; // shallow copy of shared_ptrs
         double shiftPercentage = 0.2;
-        // double mutationRate = 0.01;
+        double mutationRate = 0.01;
         // build padded score toroidally
         for (int i=0;i<yLen;++i) for (int j=0;j<xLen;++j) paddedScore[i+1][j+1] = scoreTracker[i][j];
         // wrap edges
@@ -590,8 +532,10 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
                 // assign to newGrid copy
                 // make a fresh BLANK agent to hold new rule while preserving other meta
                 auto newAgent = make_shared<BLANK>(agentGrid[idy][idx]->startMove);
+                newAgent->name = agentGrid[idy][idx]->name;
                 newAgent->rule = newRule;
                 newAgent->startMove = agentGrid[idy][idx]->startMove;
+                newAgent -> mutationRate = agentGrid[idy][idx]->mutationRate;
                 newAgent->prevMove = agentGrid[idy][idx]->prevMove;
                 newGrid[idy][idx] = newAgent;
             }
@@ -601,7 +545,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         if (round == 1 || ((round % snapEvery) == 0 && (round / snapEvery) > 0)) {
             // push snapshots
             out.scoreSnaps.push_back(totalScore);
-            auto ruleSnap = agentRuleSnapshot(agentGrid,mutationRate);
+            auto ruleSnap = agentRuleSnapshot(agentGrid);
             // For storage simplicity, push ruleSnaps as flattened vectors per cell
             // but we'll convert to vector<vector<vector<double>>> where innermost is concatenated rule vector per cell
             size_t ruleLen = 5;//(int)agentGrid[0][0]->rule.size();
@@ -704,8 +648,6 @@ main (testing)
 
 int main(int argc, char** argv) {
     auto setUpStartTime = std::chrono::high_resolution_clock::now();
-    
-
     if (argc < 6) {
         cerr << "Usage: ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round\n";
         return 1;
@@ -718,6 +660,9 @@ int main(int argc, char** argv) {
 
 
     int gridN = atoi(argv[5]); //atoi interterprets strings as integers
+    if (gridN%32!=0){
+        throw std::runtime_error("gridN must be a multiple of 32");
+    }
     pair<int,int> res = {atoi(argv[6]),atoi(argv[7])}; //what exactly is res?
     int maxN = atoi(argv[8]); //what is maxN? how does it relate to gridN
     int rounds = atoi(argv[9]);
@@ -741,7 +686,7 @@ int main(int argc, char** argv) {
 
     auto setUpEndTime = chrono::high_resolution_clock::now();
 
-    TorusResult resu = torusTournament(grid, iters, rounds, snaps, evolutionRate, evolutionChance, mutationRate, inversionPercentage, inversionRound);
+    TorusResult resu = torusTournament(grid, iters, rounds, snaps, evolutionRate, mutationRate, evolutionChance, inversionPercentage, inversionRound);
 
     auto simulationEndTime = chrono::high_resolution_clock::now();
 
