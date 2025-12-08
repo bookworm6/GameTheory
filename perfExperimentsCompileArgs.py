@@ -37,9 +37,10 @@ def generateNewLogPath(): #PA Thougths - if this is run between every single exp
 ######################################################
 
 class Experiment: #
-    def __init__(self, execPath): #execPath points to c++ excecutable to run #PA questions - what do all the various parameters do? 
+    def __init__(self, compilationString): #execPath points to c++ excecutable to run #PA questions - what do all the various parameters do? 
         ### Experiment parameters
-        self.gridN = 32 #grid size?
+        self.gridN = 64 #grid size?
+        self.tileSize = 32
         self.res = (4,4) #what's this?
         self.maxN = 1 #what's this?
         self.rounds = 10000 #number of different matchups
@@ -55,9 +56,10 @@ class Experiment: #
         self.varySeed = False
         self.inversionPercentage = 0
         self.inversionRound = self.rounds // 2
+        self.compilationString = compilationString
         
         ### Experiment execution
-        self.execPath = execPath
+        self.execPath = "./sim" #this will get overwritten during subprocessArgList()
         self.logPath = generateNewLogPath() #
         print(f"new log path is {self.logPath}")
     
@@ -65,6 +67,8 @@ class Experiment: #
         match name: 
             case "gridN":
                 self.gridN = int(value)
+            case "tileSize":
+                self.tileSize = int(value)
             case "res":
                 if type(value) != list and len(value) != 2:
                     print("bad resolution")
@@ -103,6 +107,9 @@ class Experiment: #
                 self.inversionPercentage = float(value)
             case "inversionRound":
                 self.inversionRound = int(value)
+        if ((self.gridN%self.tileSize)!=0):
+            raise ValueError("tileSize must be a factor of gridN. Performance will be improved if tileSize is a multiple of 16")
+        
 
     #returns performance results for this run in numpy array [totalTime, setUpTime, simulationTime, timePerRound, reportingTime];
     def run(self):
@@ -115,18 +122,22 @@ class Experiment: #
                 self.seed2 = int(random.rand()*10000)
             try: 
                 print("CWD: ", os.getcwd())
-                capturedOutput = subprocess.run( #run compiled simulation excecutable
-                [self.execPath, str(self.payoffMatrix[0][0]), str(self.payoffMatrix[0][1]),
-                str(self.payoffMatrix[1][0]), str(self.payoffMatrix[1][1]),
-                str(self.gridN), str(self.res[0]), str(self.res[1]),
-                str(self.maxN), str(self.rounds), str(self.iters),
-                str(self.snaps), str(self.evolutionRate), str(self.mutationRate), 
-                str(self.evolutionChance), str(self.gridSeed), str(self.playSeed),
-                str(subPath)],capture_output=True,text=True, check=True
+                subprocess.run(self.subprocessArgList(),text=True,check=True) #compiling the simulation from self.compilationSring. inserts macros for all of the parameters.  
+                capturedOutput = subprocess.run([self.execPath],capture_output=True,text=True, check=True
                 )
                 return self.parsePerfString(capturedOutput.stdout)
             except subprocess.CalledProcessError:
                 pass
+
+    def subprocessArgList(self,subPath):
+        compilationArgs = self.compilationString.split(" ")
+        insertArgs = [f"-DP00={self.payoffMatrix[0][0]}",f"-DP01={self.payoffMatrix[0][1]}",f"-DP10={self.payoffMatrix[1][0]}",f"-DP11={self.payoffMatrix[1][1]}",
+                      f"-DGRIDN={self.gridN}",f"-DRES0={self.res[0]}",f"-DRES1={self.res[1]}",f"-DMAXN={self.maxN}",f"-DROUNDS={self.rounds}",f"-DITERS={self.iters}",
+                      f"-DSNAPS={self.snaps}",f"-DEVOLUTIONRATE={self.evolutionRate}",f"-DMUTATIONRATE={self.mutationRate}",f"-DEVOLUTIONCHANCE={self.evolutionChance}",
+                      f"-DGRIDSEED={self.gridSeed}",f"-DPLAYSEED={self.playSeed}",f"-DSUBPATH={subPath}",f"-DTILESIZE={self.tileSize}"]
+        self.execPath=f"./{compilationArgs[-1]}"
+        compilationArgs[1:1]=insertArgs; #note: I figured there must be some easy clever syntax for inserting one list into another at an index, so I look it up. This was what the AI at the top of google said to do
+        return compilationArgs
 
     #returns numpy array of [totalTime, setUpTime, simulationTime, timePerRound, reportingTime]
     def parsePerfString(self, perfString):
@@ -135,6 +146,8 @@ class Experiment: #
         for i in range(len(splitString)):
             perfTimes[i]=(splitString[i].split(": ")[1])
         return perfTimes
+    
+    
 
 
         
@@ -143,7 +156,7 @@ class Experiment: #
     def saveParams(self):
         with open(str(self.logPath/Path("params.csv")), "w") as f:
             writer = csv.writer(f)
-            writer.writerow(["p00", "p01","p10","p11","gridN","res0","res1","maxN", "rounds", "iters", "snaps", "evolutionRate", "evolutionChance", "mutationRate", "seed1", "seed2", "inversionPercentage", "inversionRound"])
+            writer.writerow(["p00", "p01","p10","p11","gridN","res0","res1","maxN", "rounds", "iters", "snaps", "evolutionRate", "evolutionChance", "mutationRate", "seed1", "seed2", "inversionPercentage", "inversionRound", "tileSize"])
             writer.writerow([
                 self.payoffMatrix[0][0],self.payoffMatrix[0][1],self.payoffMatrix[1][0],self.payoffMatrix[1][1],
                 self.gridN, self.res[0], self.res[1], self.maxN, self.rounds, self.iters, self.snaps,
@@ -155,12 +168,12 @@ class Experiment: #
         return f"Payoff matrix: \n{self.payoffMatrix}, \nRounds: {self.rounds}, Iters: {self.iters}"
 
 class ExperimentBuilder:
-    def __init__(self, exec):
-        self.execPath = exec
+    def __init__(self, compilationString):
+        self.compimpilationString = compilationString
         self.experiments = []
     
     def new(self):
-        return Experiment(self.execPath)
+        return Experiment(self.compimpilationString)
 
     def fromParamDict(self, paramDict, add=True):
         exp = self.new()
@@ -357,13 +370,13 @@ def perfFileStructure(independentVarVal, independentVarName, executableName):
 
 reps = 50
 independentVarVal = np.array([64,128,256,512])
-executables = ["./simPragmaMultiThreadXoroshiroTilingResuseRandom","./simOrig","./simNoMultiThreadXoroshiro","./simMultiThreadXoroshiroReuseRandom","./simMultiThreadXoroshiro"]
+compilationCommands = ["./simPragmaMultiThreadXoroshiroTilingResuseRandom","./simOrig","./simNoMultiThreadXoroshiro","./simMultiThreadXoroshiroReuseRandom","./simMultiThreadXoroshiro"]
 independentVarName = "gridN"
 paramdict = {"repeats": 1, "rounds": 1000, "snaps": 10, "gridN": 128, "varySeed": False, 
                             "payoffMatrix": [[1,5],[0,3.3]], "inversionPercentage": 0.1,
                             "mutationRate": 0.005, "res": (2,2)} #goal gridN : 128
-for executable in executables:
-    DATA_PATH = DATA_PATH/executable[2:]
+for command in compilationCommands:
+    DATA_PATH = DATA_PATH/(command.split()[-1]) #DATA_PATH = DATAPATH/excecutableName
     DATA_PATH.mkdir(parents=True,exist_ok=False)
 
     #exp = builder.fromParamDict(paramdict)

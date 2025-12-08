@@ -1,6 +1,6 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simMultiThreadXoroshiro.cpp -o simMultiThreadXoroshiro2 -pthread
+// Compile: g++ -O3 -std=c++17 simMultiThreadXoroshiro.cpp -o simMultiThreadXoroshiro -pthread
 // Run: ./sim
 //
 // Outputs CSV files:
@@ -557,7 +557,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
                 newAgent->name = agentGrid[idy][idx]->name;
                 newAgent->rule = newRule;
                 newAgent->startMove = agentGrid[idy][idx]->startMove;
-                newAgent -> mutationRate = agentGrid[idy][idx]->mutationRate
+                newAgent -> mutationRate = agentGrid[idy][idx]->mutationRate;
                 newAgent->prevMove = agentGrid[idy][idx]->prevMove;
                 newGrid[idy][idx] = newAgent;
             }

@@ -1,6 +1,6 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simNoMultiThreadXoroshiro.cpp -o simNoMultiThreadXoroshiro32
+// Compile: g++ -O3 -std=c++17 simNoMultiThreadXoroshiro.cpp -o simNoMultiThreadXoroshiro
 // Run: ./sim
 //
 // Outputs CSV files:
