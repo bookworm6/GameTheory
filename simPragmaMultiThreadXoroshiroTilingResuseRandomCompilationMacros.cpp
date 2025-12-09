@@ -3,7 +3,7 @@
 // Compile: run commands...
 // export LDFLAGS="-L/usr/local/opt/libomp/lib"
 // export CPPFLAGS="-I/usr/local/opt/libomp/include"
-// clang++ -I/usr/local/opt/libomp/include -L/usr/local/opt/libomp/lib -Xpreprocessor -fopenmp -O3 -std=c++17 -lomp simPragmaMultiThreadXoroshiroTilingResuseRandom.cpp -o simPragmaMultiThreadXoroshiroTilingResuseRandom
+// clang++ -I/usr/local/opt/libomp/include -L/usr/local/opt/libomp/lib -Xpreprocessor -fopenmp -O3 -std=c++17 -lomp simPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros.cpp -o simPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros
 // Note: I used chat gpt to figure out how to compile this. 
 // 
 // Run: ./sim
@@ -400,26 +400,24 @@ vector<vector<array<double,5>>> agentRuleSnapshot(const AgentGrid &agents, float
 }
 
 TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snaps, float evolutionRate, //could agentGrid be passed by reference?
-    float evolutionChance, float mutationRate, float inversionPercentage, int inversionRound) {
+    float evolutionChance, float mutationRate) {
 
-    int yLen = (int)agentGrid.size();
-    int xLen = (int)agentGrid[0].size();
-    int N = yLen * xLen;
+    constexpr int yLen = GRIDN;//(int)agentGrid.size();
+    constexpr int xLen = GRIDN;//(int)agentGrid[0].size();
+    constexpr int N = yLen * xLen;
     TorusResult out;
     vector<vector<double>> totalScore(yLen, vector<double>(xLen, 0.0));
-    int snapEvery = max(1, rounds / snaps);
+    constexpr int snapEvery = max(1, ROUNDS / SNAPS);
     vector<vector<double>> paddedScore(yLen+2, vector<double>(xLen+2, 0.0));
 
-    for (int round=0; round<rounds; ++round) {
-        if (round == inversionRound) {
-            //invertCentralBlock(agentGrid, inversionPercentage);
-        }
+    for (int round=0; round<ROUNDS; ++round) {
+        
         // PLAY MATCHES
         auto matchups = pickOpponents(agentGrid);
         vector<vector<int>> playedTracker(yLen, vector<int>(xLen, 0));
         vector<vector<double>> scoreTracker(yLen, vector<double>(xLen, 0.0));
 
-        int tileSize = 32;
+        constexpr int tileSize = TILESIZE;
         int maxThreads = omp_get_max_threads();
         vector<vector<vector<double>>> scoreTracker_threads(maxThreads,
             vector<vector<double>>(yLen, vector<double>(xLen, 0.0)));
@@ -446,7 +444,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
                             playedTracker_threads[threadId][idy][idx] += 1;
                             playedTracker_threads[threadId][match.second][match.first] += 1;
 
-                            for (int n = 0; n < iters; ++n) {
+                            for (int n = 0; n < ITERS; ++n) {
                                 unsigned long long a1prev = a1->prevMove;
                                 unsigned long long a2prev = a2->prevMove;
                                 int a1move = a1->playMove(a2prev, generate16.generate(), n);
@@ -538,7 +536,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
                 // mutate
                 vector<double> ruleShift2(agentGrid[idy][idx]->rule.size(), 0.0);
                 for (size_t k=0;k<ruleShift2.size();++k) {
-                    ruleShift2[k] = ((uniform01() * 2.0) - 1.0) * mutationRate;
+                    ruleShift2[k] = ((uniform01() * 2.0) - 1.0) * MUTATIONRATE;
                 }
                 array<double,4> newRule = agentGrid[idy][idx]->rule;
                 for (size_t k=0;k<newRule.size();++k) newRule[k] = newRule[k] + ruleShift[k] + ruleShift2[k];
@@ -661,47 +659,50 @@ void write_nonCumulative_csv(const vector<vector<vector<double>>> &ncs, const st
 main (testing)
 --------------------------- */
 
-int main(int argc, char** argv) {
+// -DP00={self.payoffMatrix[0][0]}",f"-DP01={self.payoffMatrix[0][1]}",f"-DP10={self.payoffMatrix[1][0]}",f"-DP11={self.payoffMatrix[1][1]}",
+//                       f"-DGRIDN={self.gridN}",f"-DRES0={self.res[0]}",f"-DRES1={self.res[1]}",f"-DMAXN={self.maxN}",f"-DROUNDS={self.rounds}",f"-DITERS={self.iters}",
+//                       f"-DSNAPS={self.snaps}",f"-DEVOLUTIONRATE={self.evolutionRate}",f"-DMUTATIONRATE={self.mutationRate}",f"-DEVOLUTIONCHANCE={self.evolutionChance}",
+//                       f"-DGRIDSEED={self.gridSeed}",f"-DPLAYSEED={self.playSeed}",f"-DSUBPATH={subPath}",f"-DTILESIZE={self.tileSize}"
+
+int main() {
     auto setUpStartTime = std::chrono::high_resolution_clock::now();
-    if (argc < 6) {
-        cerr << "Usage: ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round\n";
-        return 1;
-    }
+    // if (argc < 6) {
+    //     cerr << "Usage: ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round\n";
+    //     return 1;
+    // }
 
     payoffMatrix = {
-        {atof(argv[1]), atof(argv[2])}, //atof interprets the strings as floats
-        {atof(argv[3]), atof(argv[4])}
+        {P00, P01}, //atof interprets the strings as floats
+        {P10, P11}
     };
 
 
-    int gridN = atoi(argv[5]); //atoi interterprets strings as integers
+    const int gridN = GRIDN; //atoi interterprets strings as integers
     if (gridN%32!=0){
         throw std::runtime_error("gridN must be a multiple of 32");
     }
-    pair<int,int> res = {atoi(argv[6]),atoi(argv[7])}; //what exactly is res?
-    int maxN = atoi(argv[8]); //what is maxN? how does it relate to gridN
-    int rounds = atoi(argv[9]);
-    int iters = atoi(argv[10]);
-    int snaps = atoi(argv[11]);
+    pair<int,int> res = {RES0,RES1}; //what exactly is res?
+    const int maxN = MAXN; //what is maxN? how does it relate to gridN
+    constexpr int rounds = ROUNDS;
+    int iters = ITERS;
+    int snaps = SNAPS;
 
-    double evolutionRate = atof(argv[12]); //what is evolution rate - it doesn't looke like it is ever used?
-    double mutationRate = atof(argv[13]); //mutation rate randomly changes also the strategies a bit every round
-    double evolutionChance = atof(argv[14]); //evolution Chance - change of adopting winner's strategy?
-    unsigned int gridSeed = (unsigned) std::atoi(argv[15]); //randomness for distributing agents
-    unsigned int playSeed = (unsigned) std::atoi(argv[16]); //randomness for playing
+    double evolutionRate = EVOLUTIONRATE; //what is evolution rate - it doesn't looke like it is ever used?
+    double mutationRate = MUTATIONRATE; //mutation rate randomly changes also the strategies a bit every round
+    double evolutionChance = EVOLUTIONCHANCE; //evolution Chance - change of adopting winner's strategy?
+    unsigned int gridSeed = (unsigned) GRIDSEED; //randomness for distributing agents
+    unsigned int playSeed = (unsigned) PLAYSEED; //randomness for playing
     // global_rng.seed(playSeed);
     // grid_rng.seed(gridSeed);
-    double inversionPercentage = atof(argv[17]);//0; //what is inversion percentage and inversion round?
-    int inversionRound = atoi(argv[18]);//1;
 
 
-    std::string path = argv[17];
+    const std::string path = SUBPATH;
 
     AgentGrid grid = blankGrid(gridN, res, gridSeed, mutationRate);
 
     auto setUpEndTime = chrono::high_resolution_clock::now();
 
-    TorusResult resu = torusTournament(grid, iters, rounds, snaps, evolutionRate, evolutionChance, mutationRate, inversionPercentage, inversionRound); //should agentGrid be passed by reference?
+    TorusResult resu = torusTournament(grid, iters, rounds, snaps, evolutionRate, evolutionChance, mutationRate); //should agentGrid be passed by reference?
 
     auto simulationEndTime = chrono::high_resolution_clock::now();
 

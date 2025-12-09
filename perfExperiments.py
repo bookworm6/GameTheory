@@ -39,7 +39,7 @@ def generateNewLogPath(): #PA Thougths - if this is run between every single exp
 class Experiment: #
     def __init__(self, execPath): #execPath points to c++ excecutable to run #PA questions - what do all the various parameters do? 
         ### Experiment parameters
-        self.gridN = 32 #grid size?
+        self.gridN = 64 #grid size?
         self.res = (4,4) #what's this?
         self.maxN = 1 #what's this?
         self.rounds = 10000 #number of different matchups
@@ -359,9 +359,9 @@ reps = 50
 independentVarVal = np.array([64,128,256,512])
 executables = ["./simPragmaMultiThreadXoroshiroTilingResuseRandom","./simOrig","./simNoMultiThreadXoroshiro","./simMultiThreadXoroshiroReuseRandom","./simMultiThreadXoroshiro"]
 independentVarName = "gridN"
-paramdict = {"repeats": 1, "rounds": 1000, "snaps": 10, "gridN": 128, "varySeed": False, 
+paramdict = {"repeats": 1, "rounds": 250, "snaps": 10, "gridN": 128, "varySeed": False, 
                             "payoffMatrix": [[1,5],[0,3.3]], "inversionPercentage": 0.1,
-                            "mutationRate": 0.005, "res": (2,2)} #goal gridN : 128
+                            "mutationRate": 0.01, "res": (2,2)} #goal gridN : 128
 for executable in executables:
     DATA_PATH = DATA_PATH/executable[2:]
     DATA_PATH.mkdir(parents=True,exist_ok=False)

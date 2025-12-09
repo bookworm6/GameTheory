@@ -122,19 +122,20 @@ class Experiment: #
                 self.seed2 = int(random.rand()*10000)
             try: 
                 print("CWD: ", os.getcwd())
-                subprocess.run(self.subprocessArgList(),text=True,check=True) #compiling the simulation from self.compilationSring. inserts macros for all of the parameters.  
+                subprocess.run(self.subprocessArgList(subPath),text=True,check=True) #compiling the simulation from self.compilationSring. inserts macros for all of the parameters.  
                 capturedOutput = subprocess.run([self.execPath],capture_output=True,text=True, check=True
                 )
                 return self.parsePerfString(capturedOutput.stdout)
             except subprocess.CalledProcessError:
-                pass
+                raise RuntimeError("something went wrong in a subprocess")
+                
 
     def subprocessArgList(self,subPath):
         compilationArgs = self.compilationString.split(" ")
         insertArgs = [f"-DP00={self.payoffMatrix[0][0]}",f"-DP01={self.payoffMatrix[0][1]}",f"-DP10={self.payoffMatrix[1][0]}",f"-DP11={self.payoffMatrix[1][1]}",
                       f"-DGRIDN={self.gridN}",f"-DRES0={self.res[0]}",f"-DRES1={self.res[1]}",f"-DMAXN={self.maxN}",f"-DROUNDS={self.rounds}",f"-DITERS={self.iters}",
                       f"-DSNAPS={self.snaps}",f"-DEVOLUTIONRATE={self.evolutionRate}",f"-DMUTATIONRATE={self.mutationRate}",f"-DEVOLUTIONCHANCE={self.evolutionChance}",
-                      f"-DGRIDSEED={self.gridSeed}",f"-DPLAYSEED={self.playSeed}",f"-DSUBPATH={subPath}",f"-DTILESIZE={self.tileSize}"]
+                      f"-DGRIDSEED={self.gridSeed}",f"-DPLAYSEED={self.playSeed}",f'-DSUBPATH="{subPath}"',f"-DTILESIZE={self.tileSize}"]
         self.execPath=f"./{compilationArgs[-1]}"
         compilationArgs[1:1]=insertArgs; #note: I figured there must be some easy clever syntax for inserting one list into another at an index, so I look it up. This was what the AI at the top of google said to do
         return compilationArgs
@@ -370,13 +371,14 @@ def perfFileStructure(independentVarVal, independentVarName, executableName):
 
 reps = 50
 independentVarVal = np.array([64,128,256,512])
-compilationCommands = ["./simPragmaMultiThreadXoroshiroTilingResuseRandom","./simOrig","./simNoMultiThreadXoroshiro","./simMultiThreadXoroshiroReuseRandom","./simMultiThreadXoroshiro"]
+compilationCommands = ["clang++ -I/usr/local/opt/libomp/include -L/usr/local/opt/libomp/lib -Xpreprocessor -fopenmp -O3 -std=c++17 -lomp simPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros.cpp -o simPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros"]
 independentVarName = "gridN"
-paramdict = {"repeats": 1, "rounds": 1000, "snaps": 10, "gridN": 128, "varySeed": False, 
+paramdict = {"repeats": 1, "rounds": 250, "snaps": 10, "gridN": 128, "varySeed": False, 
                             "payoffMatrix": [[1,5],[0,3.3]], "inversionPercentage": 0.1,
-                            "mutationRate": 0.005, "res": (2,2)} #goal gridN : 128
+                            "mutationRate": 0.01, "res": (2,2)} #goal gridN : 128
 for command in compilationCommands:
-    DATA_PATH = DATA_PATH/(command.split()[-1]) #DATA_PATH = DATAPATH/excecutableName
+    excecutableName = command.split()[-1]
+    DATA_PATH = DATA_PATH/(excecutableName) #DATA_PATH = DATAPATH/excecutableName
     DATA_PATH.mkdir(parents=True,exist_ok=False)
 
     #exp = builder.fromParamDict(paramdict)
@@ -385,12 +387,12 @@ for command in compilationCommands:
 
     #running the performance tests reps time, writing results to files, and averaging
 
-    perfFilePaths = perfFileStructure(independentVarVal,independentVarName, executable)
+    perfFilePaths = perfFileStructure(independentVarVal,independentVarName, excecutableName)
     averages = np.zeros((len(independentVarVal),5))
     for i in range(reps):
         DATA_PATH = DATA_PATH/f"{i}"
         DATA_PATH.mkdir(parents=True,exist_ok=False)
-        builder = ExperimentBuilder(executable)
+        builder = ExperimentBuilder(command)
         builder.parameterRangePreSet(independentVarVal, independentVarName,paramdict)
         perfResults = builder.runAll() #2d array. each row represents the results of one run of the simulation in form [totalTime, setUpTime, simulationTime, timePerRound, reportingTime] each col is a different experiement (potentially with diff params)
         averages+=perfResults
