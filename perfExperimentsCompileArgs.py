@@ -370,10 +370,10 @@ def perfFileStructure(independentVarVal, independentVarName, executableName):
 
 
 reps = 50
-independentVarVal = np.array([64,128,256,512])
+independentVarVal = np.array([16,32,64,128,256,512])
 compilationCommands = ["clang++ -I/usr/local/opt/libomp/include -L/usr/local/opt/libomp/lib -Xpreprocessor -fopenmp -O3 -std=c++17 -lomp simPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros.cpp -o simPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros"]
-independentVarName = "gridN"
-paramdict = {"repeats": 1, "rounds": 250, "snaps": 10, "gridN": 128, "varySeed": False, 
+independentVarName = "tileSize"
+paramdict = {"repeats": 1, "rounds": 250, "snaps": 10, "gridN": 512, "varySeed": False, 
                             "payoffMatrix": [[1,5],[0,3.3]], "inversionPercentage": 0.1,
                             "mutationRate": 0.01, "res": (2,2)} #goal gridN : 128
 for command in compilationCommands:

@@ -376,6 +376,7 @@ vector<vector<array<double,5>>> agentRuleSnapshot(const AgentGrid &agents) {
     return snap;
 }
 
+//doesn't matter much bc only called once, but this can completely take a reference. 
 TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snaps, float evolutionRate, //could agentGrid be passed by reference?
     float evolutionChance, float mutationRate, float inversionPercentage, int inversionRound) {
 
@@ -552,7 +553,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
                     if (newRule[k] > 1.0) newRule[k] = 1.0;
                 }
                 // assign to newGrid copy
-                // make a fresh BLANK agent to hold new rule while preserving other meta
+                // make a fresh BLANK agent to hold new rule while preserving other meta - unecessary to construct completely new grid and copy pointers around. not doing anything with the meta bc you're already writing to file. just update agent's values. 
                 auto newAgent = make_shared<BLANK>(agentGrid[idy][idx]->startMove);
                 newAgent->name = agentGrid[idy][idx]->name;
                 newAgent->rule = newRule;

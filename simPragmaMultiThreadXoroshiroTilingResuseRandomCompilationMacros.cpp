@@ -3,7 +3,9 @@
 // Compile: run commands...
 // export LDFLAGS="-L/usr/local/opt/libomp/lib"
 // export CPPFLAGS="-I/usr/local/opt/libomp/include"
-// clang++ -I/usr/local/opt/libomp/include -L/usr/local/opt/libomp/lib -Xpreprocessor -fopenmp -O3 -std=c++17 -lomp simPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros.cpp -o simPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros
+/*
+clang++ -g -DP00=1 -DP01=5 -DP10=0 -DP11=3.3 -DGRIDN=512 -DRES0=2 -DRES1=2 -DMAXN=1 -DROUNDS=250 -DITERS=60 -DSNAPS=10 -DEVOLUTIONRATE=0.01 -DMUTATIONRATE=0.001 -DEVOLUTIONCHANCE=0.2 -DGRIDSEED=1298347509 -DPLAYSEED=497698134 '-DSUBPATH="./Data/Perf"' -DTILESIZE=32 -I/usr/local/opt/libomp/include -L/usr/local/opt/libomp/lib -Xpreprocessor -fopenmp -O3 -std=c++17 -lomp simPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros.cpp -o simPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros
+*/
 // Note: I used chat gpt to figure out how to compile this. 
 // 
 // Run: ./sim
@@ -21,6 +23,8 @@
 ./sim 1 5 0 3 32 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 5000
 
 */
+
+
 #define NOMINMAX
 #include <fstream>
 #include <thread>
