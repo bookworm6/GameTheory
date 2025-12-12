@@ -369,11 +369,13 @@ def perfFileStructure(independentVarVal, independentVarName, executableName):
         
 
 
-reps = 10
-independentVarVal = np.array([8,16,32,64,128,256,512])
-compilationCommands = ["clang++ -I/usr/local/opt/libomp/include -L/usr/local/opt/libomp/lib -Xpreprocessor -fopenmp -O3 -std=c++17 -lomp simPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros.cpp -o simPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros"]
+reps = 20
+independentVarVal = np.array([512])
+#compilationCommands = ["clang++ -I/usr/local/opt/libomp/include -L/usr/local/opt/libomp/lib -Xpreprocessor -fopenmp -O3 -std=c++17 -lomp simPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros.cpp -o simPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros"]
+compilationCommands = ["clang++ -O3 -std=c++17  simOrigProfiling.cpp -o simOrigProfiling -pthread"]
+
 independentVarName = "tileSize"
-paramdict = {"repeats": 1, "rounds": 250, "snaps": 10, "gridN": 512, "varySeed": False, 
+paramdict = {"repeats": 1, "rounds": 10, "snaps": 0, "gridN": 512, "varySeed": False, 
                             "payoffMatrix": [[1,5],[0,3.3]], "inversionPercentage": 0.1,
                             "mutationRate": 0.01, "res": (2,2)} #goal gridN : 128
 for command in compilationCommands:

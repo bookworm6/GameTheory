@@ -13,7 +13,7 @@
 
 /*run a version of this wim without the experiment py file using 
 ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round
-./sim 1 5 0 3 64 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 5000
+./sim 1 5 0 3.3 512 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 5000
 
 */
 #define NOMINMAX
@@ -46,6 +46,8 @@ using namespace std;
 using u64 = unsigned long long;
 std::mt19937_64 grid_rng;
 std::mt19937_64 global_rng;
+std::chrono::high_resolution_clock::time_point setUpEndTime; //note: looked on stack overflow for type because documentation was confusing https://stackoverflow.com/questions/31497531/what-is-the-type-of-stdchronohigh-resolution-clocknow-in-c11#:~:text=Okay%2C%20I%20see%20the%20error,1 
+
 
 
 double uniform01() {
@@ -385,8 +387,17 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
     int N = yLen * xLen;
     TorusResult out;
     vector<vector<double>> totalScore(yLen, vector<double>(xLen, 0.0));
-    int snapEvery = max(1, rounds / snaps);
+    int snapEvery;
+    if (snaps==0){
+        snapEvery=rounds+1;
+    }
+    else{
+        snapEvery = max(1, rounds / snaps);
+    }
+    
     vector<vector<double>> paddedScore(yLen+2, vector<double>(xLen+2, 0.0));
+
+    setUpEndTime = chrono::high_resolution_clock::now();
 
     for (int round=0; round<rounds; ++round) {
         if (round == inversionRound) {
@@ -705,7 +716,6 @@ int main(int argc, char** argv) {
 
     AgentGrid grid = blankGrid(gridN, res, gridSeed, mutationRate);
 
-    auto setUpEndTime = chrono::high_resolution_clock::now();
 
     TorusResult resu = torusTournament(grid, iters, rounds, snaps, evolutionRate, mutationRate, evolutionChance, inversionPercentage, inversionRound);
 

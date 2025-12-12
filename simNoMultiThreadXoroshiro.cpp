@@ -47,6 +47,8 @@ using namespace std;
 using u64 = unsigned long long;
 XoshiroCpp::Xoroshiro128Plus grid_rng;
 XoshiroCpp::Xoroshiro128Plus global_rng;
+std::chrono::high_resolution_clock::time_point setUpEndTime; //note: looked on stack overflow for type because documentation was confusing https://stackoverflow.com/questions/31497531/what-is-the-type-of-stdchronohigh-resolution-clocknow-in-c11#:~:text=Okay%2C%20I%20see%20the%20error,1 
+
 
 double uniform01() {
     return std::uniform_real_distribution<double>(0.0, 1.0)(global_rng);
@@ -382,8 +384,17 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
     int N = yLen * xLen;
     TorusResult out;
     vector<vector<double>> totalScore(yLen, vector<double>(xLen, 0.0));
-    int snapEvery = max(1, rounds / snaps);
+    int snapEvery;
+    if (snaps==0){
+        snapEvery=rounds+1;
+    }
+    else{
+        snapEvery = max(1, rounds / snaps);
+    }
     vector<vector<double>> paddedScore(yLen+2, vector<double>(xLen+2, 0.0));
+
+    setUpEndTime = chrono::high_resolution_clock::now();
+
 
     for (int round=0; round<rounds; ++round) {
         if (round == inversionRound) {
@@ -643,7 +654,6 @@ int main(int argc, char** argv) {
 
     AgentGrid grid = blankGrid(gridN, res, gridSeed, mutationRate);
 
-    auto setUpEndTime = chrono::high_resolution_clock::now();
 
     TorusResult resu = torusTournament(grid, iters, rounds, snaps, evolutionRate, mutationRate, evolutionChance, inversionPercentage, inversionRound);
 

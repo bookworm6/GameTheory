@@ -413,7 +413,7 @@ TorusResult torusTournament(AgentGrid& agentGrid, int iters, int rounds, int sna
     constexpr int N = yLen * xLen;
     TorusResult out;
     vector<vector<double>> totalScore(yLen, vector<double>(xLen, 0.0));
-    constexpr int snapEvery = max(1, ROUNDS / SNAPS);
+    constexpr int snapEvery = ROUNDS+1;//max(1, ROUNDS / SNAPS);
     vector<vector<double>> paddedScore(yLen+2, vector<double>(xLen+2, 0.0));
 
     vector<vector<array<double,4>>> newRules(yLen,vector<array<double,4>>(xLen,array<double,4>{}));
@@ -720,7 +720,6 @@ int main() {
 
     AgentGrid grid = blankGrid(gridN, res, gridSeed, mutationRate);
 
-    auto setUpEndTime = chrono::high_resolution_clock::now();
 
     TorusResult resu = torusTournament(grid, iters, rounds, snaps, evolutionRate, evolutionChance, mutationRate); //should agentGrid be passed by reference?
 

@@ -1,6 +1,6 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simMultiThreadXoroshiro.cpp -o simMultiThreadXoroshiro -pthread
+// Compile: g++ -O3 -std=c++17 simOrig.cpp -o simOrig -pthread
 // Run: ./sim
 //
 // Outputs CSV files:
@@ -13,11 +13,9 @@
 
 /*run a version of this wim without the experiment py file using 
 ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round
-./sim 1 5 0 3 64 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 5000
+./sim 1 5 0 3.3 512 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 5000
 
 */
-
-//This version I make it so that assigning matchups doesn't use sin and cos. 
 #define NOMINMAX
 #include <fstream>
 #include <thread>
@@ -39,7 +37,6 @@
 #include <cstdlib>
 #include <memory>
 #include <array>
-#include "RandomGenerator/Xoshiro.hpp" //random number generator header library from https://www.pcg-random.org/download.html 
 using namespace std;
 
 /* ---------------------------
@@ -47,9 +44,10 @@ using namespace std;
    --------------------------- */
 
 using u64 = unsigned long long;
-XoshiroCpp::Xoroshiro128Plus grid_rng;
-XoshiroCpp::Xoroshiro128Plus global_rng;
+std::mt19937_64 grid_rng;
+std::mt19937_64 global_rng;
 std::chrono::high_resolution_clock::time_point setUpEndTime; //note: looked on stack overflow for type because documentation was confusing https://stackoverflow.com/questions/31497531/what-is-the-type-of-stdchronohigh-resolution-clocknow-in-c11#:~:text=Okay%2C%20I%20see%20the%20error,1 
+
 
 
 double uniform01() {
@@ -317,6 +315,11 @@ struct TorusResult {
 
 int flatten_index(int y, int x, int X) { return y*X + x; }
 
+static const pair<int,int> DIRS[8] = {
+    { 1, 0}, {-1, 0}, {0, 1}, {0,-1},
+    { 1, 1}, { 1,-1}, {-1, 1}, {-1,-1}
+};
+
 vector<vector<pair<int,int>>> pickOpponents(const AgentGrid &agentGrid) {
     int yLen = (int)agentGrid.size();
     int xLen = (int)agentGrid[0].size();
@@ -342,10 +345,7 @@ vector<vector<pair<int,int>>> pickOpponents(const AgentGrid &agentGrid) {
     return opponent;
 }
 
-static const pair<int,int> DIRS[8] = {
-    { 1, 0}, {-1, 0}, {0, 1}, {0,-1},
-    { 1, 1}, { 1,-1}, {-1, 1}, {-1,-1}
-};
+
 
 vector<vector<pair<int,int>>> pickOpponentsNew(const AgentGrid &agents) {
     int Y = agents.size();
@@ -378,6 +378,7 @@ vector<vector<array<double,5>>> agentRuleSnapshot(const AgentGrid &agents) {
     return snap;
 }
 
+//doesn't matter much bc only called once, but this can completely take a reference. 
 TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snaps, float evolutionRate, //could agentGrid be passed by reference?
     float evolutionChance, float mutationRate, float inversionPercentage, int inversionRound) {
 
@@ -393,6 +394,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
     else{
         snapEvery = max(1, rounds / snaps);
     }
+    
     vector<vector<double>> paddedScore(yLen+2, vector<double>(xLen+2, 0.0));
 
     setUpEndTime = chrono::high_resolution_clock::now();
@@ -424,7 +426,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
 
         // Worker now receives thread id and seed; 
         auto worker = [&](int t_id, int startRow, int endRow) {
-            XoshiroCpp::Xoroshiro128Plus local_rng(thread_seeds[t_id]); //Question: do you really need 64 bits of randomness? and/or could a thread use smaller parts of a random number before generating a new one. 
+            std::mt19937_64 local_rng(thread_seeds[t_id]); //Question: do you really need 64 bits of randomness? and/or could a thread use smaller parts of a random number before generating a new one. 
             std::uniform_real_distribution<double> unif(0.0, 1.0);
 
             auto local_uniform01 = [&](){ return unif(local_rng); };
@@ -562,7 +564,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
                     if (newRule[k] > 1.0) newRule[k] = 1.0;
                 }
                 // assign to newGrid copy
-                // make a fresh BLANK agent to hold new rule while preserving other meta
+                // make a fresh BLANK agent to hold new rule while preserving other meta - unecessary to construct completely new grid and copy pointers around. not doing anything with the meta bc you're already writing to file. just update agent's values. 
                 auto newAgent = make_shared<BLANK>(agentGrid[idy][idx]->startMove);
                 newAgent->name = agentGrid[idy][idx]->name;
                 newAgent->rule = newRule;
@@ -678,38 +680,39 @@ void write_nonCumulative_csv(const vector<vector<vector<double>>> &ncs, const st
 main (testing)
 --------------------------- */
 
-int main(int argc, char** argv) {
+int main() {
     auto setUpStartTime = std::chrono::high_resolution_clock::now();
-    if (argc < 6) {
-        cerr << "Usage: ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round\n";
-        return 1;
-    }
+    // if (argc < 6) {
+    //     cerr << "Usage: ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round\n";
+    //     return 1;
+    // }
 
     payoffMatrix = {
-        {atof(argv[1]), atof(argv[2])}, //atof interprets the strings as floats
-        {atof(argv[3]), atof(argv[4])}
+        {P00, P01}, //atof interprets the strings as floats
+        {P10, P11}
     };
 
 
-    int gridN = atoi(argv[5]); //atoi interterprets strings as integers
-    pair<int,int> res = {atoi(argv[6]),atoi(argv[7])}; //what exactly is res?
-    int maxN = atoi(argv[8]); //what is maxN? how does it relate to gridN
-    int rounds = atoi(argv[9]);
-    int iters = atoi(argv[10]);
-    int snaps = atoi(argv[11]);
+    const int gridN = GRIDN; //atoi interterprets strings as integers
+    if (gridN%32!=0){
+        throw std::runtime_error("gridN must be a multiple of 32");
+    }
+    pair<int,int> res = {RES0,RES1}; //what exactly is res?
+    const int maxN = MAXN; //what is maxN? how does it relate to gridN
+    constexpr int rounds = ROUNDS;
+    int iters = ITERS;
+    int snaps = SNAPS;
 
-    double evolutionRate = atof(argv[12]); //what is evolution rate - it doesn't looke like it is ever used?
-    double mutationRate = atof(argv[13]); //mutation rate randomly changes also the strategies a bit every round
-    double evolutionChance = atof(argv[14]); //evolution Chance - change of adopting winner's strategy?
-    unsigned int gridSeed = (unsigned) std::atoi(argv[15]); //randomness for distributing agents
-    unsigned int playSeed = (unsigned) std::atoi(argv[16]); //randomness for playing
+    double evolutionRate = EVOLUTIONRATE; //what is evolution rate - it doesn't looke like it is ever used?
+    double mutationRate = MUTATIONRATE; //mutation rate randomly changes also the strategies a bit every round
+    double evolutionChance = EVOLUTIONCHANCE; //evolution Chance - change of adopting winner's strategy?
+    unsigned int gridSeed = (unsigned) GRIDSEED; //randomness for distributing agents
+    unsigned int playSeed = (unsigned) PLAYSEED; //randomness for playing
     // global_rng.seed(playSeed);
     // grid_rng.seed(gridSeed);
-    double inversionPercentage = atof(argv[17]);//0; //what is inversion percentage and inversion round?
-    int inversionRound = atoi(argv[18]);//1;
 
 
-    std::string path = argv[17];
+    const std::string path = SUBPATH;
 
     AgentGrid grid = blankGrid(gridN, res, gridSeed, mutationRate);
 
@@ -729,7 +732,7 @@ int main(int argc, char** argv) {
     std::chrono::duration<double> simulationTime = simulationEndTime - setUpEndTime;
     std::chrono::duration<double> reportingResultsTime = reportingEndTime - simulationEndTime;
 
-    cout<< "TotalTime: " << totalElapsedTime.count()<<", SetUpTime: "<<setUpTime.count()<<", SimulationTime: "<<simulationTime.count()<<", TimePerRound: "<<simulationTime.count()/iters<<", ReportingTime: "<<reportingResultsTime.count()<<endl;
+    cout<< "TotalTime: " << totalElapsedTime.count()<<", SetUpTime: "<<setUpTime.count()<<", SimulationTime: "<<simulationTime.count()<<", TimePerRound: "<<simulationTime.count()/rounds<<", ReportingTime: "<<reportingResultsTime.count()<<endl;
 
     return 0;
 }
