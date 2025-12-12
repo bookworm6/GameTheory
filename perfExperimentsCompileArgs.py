@@ -350,7 +350,7 @@ def writePerfResults(perfResults,filePaths):
 
 
 def perfFileStructure(independentVarVal, independentVarName, executableName):
-    timeTypes = ['totalTime', 'setUpTime', 'simulationTime', 'timePerIter', 'reportingTime']
+    timeTypes = ['totalTime', 'setUpTime', 'simulationTime', 'timePerRound', 'reportingTime']
     perfPath = Path("./Perf")
     perfPath.mkdir(exist_ok=True)
     perfFilePaths = []
@@ -369,8 +369,8 @@ def perfFileStructure(independentVarVal, independentVarName, executableName):
         
 
 
-reps = 50
-independentVarVal = np.array([16,32,64,128,256,512])
+reps = 10
+independentVarVal = np.array([8,16,32,64,128,256,512])
 compilationCommands = ["clang++ -I/usr/local/opt/libomp/include -L/usr/local/opt/libomp/lib -Xpreprocessor -fopenmp -O3 -std=c++17 -lomp simPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros.cpp -o simPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros"]
 independentVarName = "tileSize"
 paramdict = {"repeats": 1, "rounds": 250, "snaps": 10, "gridN": 512, "varySeed": False, 

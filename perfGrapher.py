@@ -10,7 +10,7 @@ import numpy as np
 
 print("running")
 
-timeType = "simulationTime" #options are "totalTime" "timePerIter" "simulationTime" "setUpTime" "reportingTime"
+timeType = "simulationTime" #options are "totalTime" "timePerRound" "simulationTime" "setUpTime" "reportingTime"
 files = glob.glob(f"Perf/{timeType}_*.csv")
 contents=[]
 names=[]

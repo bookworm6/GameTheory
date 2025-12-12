@@ -1,6 +1,17 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simNoMultiThreadXoroshiro.cpp -o simNoMultiThreadXoroshiro
+// Compile: run commands...
+// export LDFLAGS="-L/usr/local/opt/libomp/lib"
+// export CPPFLAGS="-I/usr/local/opt/libomp/include"
+/*
+clang++ -g -DP00=1 -DP01=5 -DP10=0 -DP11=3.3 -DGRIDN=512 -DRES0=2 -DRES1=2 -DMAXN=1 -DROUNDS=250 -DITERS=60 -DSNAPS=10 -DEVOLUTIONRATE=0.01 -DMUTATIONRATE=0.001 -DEVOLUTIONCHANCE=0.2 -DGRIDSEED=1298347509 -DPLAYSEED=497698134 '-DSUBPATH="./Data/Perf"' -DTILESIZE=32 -I/usr/local/opt/libomp/include -L/usr/local/opt/libomp/lib -Xpreprocessor -fopenmp -O3 -std=c++17 -lomp AgentGridNoPointersThreadPointerssimPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros.cpp -o AgentGridNoPointersThreadPointerssimPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros
+
+
+
+
+*/
+// Note: I used chat gpt to figure out how to compile this. 
+// 
 // Run: ./sim
 //
 // Outputs CSV files:
@@ -16,6 +27,8 @@
 ./sim 1 5 0 3 32 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 5000
 
 */
+
+
 #define NOMINMAX
 #include <fstream>
 #include <thread>
@@ -37,6 +50,7 @@
 #include <cstdlib>
 #include <memory>
 #include <array>
+#include<omp.h>
 #include "RandomGenerator/Xoshiro.hpp" 
 using namespace std;
 
@@ -47,6 +61,8 @@ using namespace std;
 using u64 = unsigned long long;
 XoshiroCpp::Xoroshiro128Plus grid_rng;
 XoshiroCpp::Xoroshiro128Plus global_rng;
+std::chrono::high_resolution_clock::time_point setUpEndTime; //note: looked on stack overflow for type because documentation was confusing https://stackoverflow.com/questions/31497531/what-is-the-type-of-stdchronohigh-resolution-clocknow-in-c11#:~:text=Okay%2C%20I%20see%20the%20error,1 
+
 
 double uniform01() {
     return std::uniform_real_distribution<double>(0.0, 1.0)(global_rng);
@@ -183,23 +199,16 @@ struct Memory1 {
     Move startMove;
     Move prevMove;
     array<double,4> rule;
-    double score;
-    string name;
-    double mutationRate;
 
-    Memory1(Move _start = COOP, double _mutationRate=0.0):
+    Memory1(Move _start = COOP):
         startMove(_start),
         prevMove(startMove),
-        rule{0.0,0.0,0.0,0.0},
-        mutationRate(_mutationRate),
-        score(0.0),
-        name("MemoryN")
+        rule{0.0,0.0,0.0,0.0}
     {}
 
     virtual void startup(Move _start) {
         this->startMove = _start;
         this->prevMove = _start;
-        this->score = 0.0;
     }
 
     int playMove(int theirPrev, double seed, int roundNum) { //I wonder what the branch mispredictions are like
@@ -219,13 +228,10 @@ struct Memory1 {
     }
 
     void reset() {
-        score = 0.0;
         prevMove = startMove;
     }
 
-    virtual string repr() const {
-        return name;
-    }
+
 
     void setRule(const array<double, 4> &r) {
         rule[0] = r[0];
@@ -237,7 +243,6 @@ struct Memory1 {
 
 struct BLANK : public Memory1 {
     BLANK(Move start = COOP) : Memory1(start) {
-        name = "BLANK";
         rule[0] = 0.0;
         rule[1] = 0.0;
         rule[2] = 0.0;
@@ -247,11 +252,42 @@ struct BLANK : public Memory1 {
     }
 };
 
+struct Random16{
+
+    uint64_t normalize; //this will be the value of 16 bits of ones. it will be computed at compile time. 
+    uint64_t currentRandomNumber;
+    bool generateNew;
+    int bitsAvailable;
+    XoshiroCpp::Xoroshiro128Plus local_rng;
+
+ 
+    Random16(int seed):
+        local_rng(seed){
+        normalize = ((uint64_t)(-1))>>48; //this will be the value of 16 bits of ones. it will be computed at compile time. 
+        currentRandomNumber = 0;
+        bitsAvailable=0;
+        
+    }
+
+    float generate (){
+        if (bitsAvailable==0){
+            currentRandomNumber = local_rng();
+            bitsAvailable = 64;
+        }
+        int toReturn = ((uint64_t)currentRandomNumber)>>(bitsAvailable-16);
+        bitsAvailable-=16;
+        int shiftAmount = 64-bitsAvailable;
+        currentRandomNumber = ((uint64_t)(currentRandomNumber<<shiftAmount))>>shiftAmount;
+        return (float)toReturn/(float)normalize;
+    }
+    
+};
+
 /* ---------------------------
 Grid generation
 --------------------------- */
 
-using AgentGrid = vector<vector<shared_ptr<Memory1>>>;
+using AgentGrid = vector<vector<Memory1>>;
 
 // blankGrid(N, res, maxN=1, seed)
 AgentGrid blankGrid(int N, pair<int,int> res, unsigned seed = 0, double mutationRate=0.0) {
@@ -273,9 +309,9 @@ AgentGrid blankGrid(int N, pair<int,int> res, unsigned seed = 0, double mutation
         paramMaps[k][i][j] += 1;
         paramMaps[k][i][j] /= 2.0;
     }
-    AgentGrid grid(N, vector<shared_ptr<Memory1>>(N)); //would it be a good idea to dynamically allocate this so that it is not copying a massive datastructure?
+    AgentGrid grid(N, vector<Memory1>(N)); //would it be a good idea to dynamically allocate this so that it is not copying a massive datastructure?
     for (int i=0;i<N;++i) for (int j=0;j<N;++j) {
-        auto ag = make_shared<BLANK>(COOP);
+        auto ag = BLANK(COOP);
         // create rule vector of length 4. The python did: setRule([i**2 for i in list(paramMaps[:,idr,idc])])
         // paramMaps[:,idr,idc] is "number" values — they square them.
         array<double,4> ruleVals;
@@ -290,8 +326,7 @@ AgentGrid blankGrid(int N, pair<int,int> res, unsigned seed = 0, double mutation
             if (ruleVals[k] < 0.0) ruleVals[k] = 0.0;
             if (ruleVals[k] > 1.0) ruleVals[k] = 1.0;
         }
-        ag->setRule(ruleVals);
-        ag->mutationRate = mutationRate;//paramMaps[4][i][j];
+        ag.setRule(ruleVals);
         grid[i][j] = ag;
     }
     return grid;
@@ -360,66 +395,113 @@ vector<vector<pair<int,int>>> pickOpponentsNew(const AgentGrid &agents) {
     return opp;
 }
 
-vector<vector<array<double,5>>> agentRuleSnapshot(const AgentGrid &agents) {
+vector<vector<array<double,5>>> agentRuleSnapshot(const AgentGrid &agents, float mutationRate) {
     int Y = agents.size();
     int X = agents[0].size();
 
     vector<vector<array<double,5>>> snap(Y, vector<array<double,5>>(X));
     for(int i=0; i<Y; ++i){
         for(int j=0; j<X; ++j) {
-            for(int k=0; k<4; ++k) snap[i][j][k] = agents[i][j]->rule[k];
-            snap[i][j][4] = agents[i][j]->mutationRate;
+            for(int k=0; k<4; ++k) snap[i][j][k] = agents[i][j].rule[k];
+            snap[i][j][4] = mutationRate;
         }
     }
     return snap;
 }
 
-TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snaps, float evolutionRate, //could agentGrid be passed by reference?
-    float evolutionChance, float mutationRate, float inversionPercentage, int inversionRound) {
+TorusResult torusTournament(AgentGrid& agentGrid, int iters, int rounds, int snaps, float evolutionRate, //could agentGrid be passed by reference?
+    float evolutionChance, float mutationRate) {
 
-    int yLen = (int)agentGrid.size();
-    int xLen = (int)agentGrid[0].size();
-    int N = yLen * xLen;
+    constexpr int yLen = GRIDN;//(int)agentGrid.size();
+    constexpr int xLen = GRIDN;//(int)agentGrid[0].size();
+    constexpr int N = yLen * xLen;
     TorusResult out;
     vector<vector<double>> totalScore(yLen, vector<double>(xLen, 0.0));
-    int snapEvery = max(1, rounds / snaps);
+    constexpr int snapEvery = max(1, ROUNDS / SNAPS);
     vector<vector<double>> paddedScore(yLen+2, vector<double>(xLen+2, 0.0));
 
-    for (int round=0; round<rounds; ++round) {
-        if (round == inversionRound) {
-            //invertCentralBlock(agentGrid, inversionPercentage);
-        }
+    vector<vector<array<double,4>>> newRules(yLen,vector<array<double,4>>(xLen,array<double,4>{}));
+
+    int maxThreads = omp_get_max_threads();
+
+
+    //making scoreTracker_threads store POINTERS to each threads vectors to eliminate memory problems
+    vector<vector<vector<double>>*> scoreTracker_threads;
+    vector<vector<vector<int>>*> playedTracker_threads;
+    for (int ithread=0;ithread<maxThreads;ithread++){
+        scoreTracker_threads.push_back(new vector<vector<double>>(yLen,vector<double>(xLen,0.0))); //remember to destroy properly!
+        playedTracker_threads.push_back(new vector<vector<int>>(yLen,vector<int>(xLen,0))); //remember to destroy properly!
+    }
+
+
+
+    setUpEndTime = chrono::high_resolution_clock::now();
+
+
+    for (int round=0; round<ROUNDS; ++round) {
+        
         // PLAY MATCHES
         auto matchups = pickOpponents(agentGrid);
         vector<vector<int>> playedTracker(yLen, vector<int>(xLen, 0));
         vector<vector<double>> scoreTracker(yLen, vector<double>(xLen, 0.0));
 
-        std::uniform_real_distribution<double> unif(0.0, 1.0);
+        constexpr int tileSize = TILESIZE;
+        
+        
+        
+        #pragma omp parallel
+        {
+
+            Random16 generate16(10);
+            int threadId = omp_get_thread_num();
+            vector<vector<double>>* myScoreTracker = scoreTracker_threads[threadId];
+            vector<vector<int>>* myPlayedTracker = playedTracker_threads[threadId];
+            
+            
+
+            //this is the main simulation loop. This SHOULD take the majority of the time
+            #pragma omp for
+            for (int tiley=0;tiley<yLen;tiley+=tileSize){
+                for (int tilex=0;tilex<xLen;tilex+=tileSize){
+                    for (int idy=tiley; idy<(tiley+tileSize);idy++){
+                        for(int idx=tilex;idx<(tilex+tileSize);idx++){
+                            auto match = matchups[idy][idx];
+                            auto a1 = agentGrid[idy][idx];
+                            auto a2 = agentGrid[match.second][match.first];
+
+                            (*myPlayedTracker)[idy][idx] += 1; //note: I had chat gpt explain the right syntax bc it has been a while and I forgot
+                            (*myPlayedTracker)[match.second][match.first] += 1;
+
+                            for (int n = 0; n < ITERS; ++n) {
+                                unsigned long long a1prev = a1.prevMove;
+                                unsigned long long a2prev = a2.prevMove;
+                                int a1move = a1.playMove(a2prev, generate16.generate(), n);
+                                int a2move = a2.playMove(a1prev, generate16.generate(), n);
+                                // accumulate into thread-local arrays
+                                (*myScoreTracker)[idy][idx] += payoffMatrix[a1move][a2move];
+                                (*myScoreTracker)[match.second][match.first] += payoffMatrix[a2move][a1move];
+                            }
+                            a1.reset();
+                            a2.reset();
+
+                        }
+                    }
+                }
+            }
+        }
         
 
-        //this is the main simulation loop. This SHOULD take the majority of the time
-        for (int idy = 0; idy < yLen; ++idy) {
-            for (int idx = 0; idx < xLen; ++idx) {
-                auto match = matchups[idy][idx];
-                auto a1 = agentGrid[idy][idx];
-                auto a2 = agentGrid[match.second][match.first];
+        for (int t=0; t<playedTracker_threads.size(); ++t) {
+            for (int i=0;i<yLen;++i) {
+                for (int j=0;j<xLen;++j) {
+                    playedTracker[i][j] += (*playedTracker_threads[t])[i][j];
+                    (*playedTracker_threads[t])[i][j]=0; //zeroing out played tracker so I don't need to allocate new memory in next round
 
-                playedTracker[idy][idx] += 1;
-                playedTracker[match.second][match.first] += 1;
-
-                for (int n = 0; n < iters; ++n) {
-                    unsigned long long a1prev = a1->prevMove;
-                    unsigned long long a2prev = a2->prevMove;
-                    int a1move = a1->playMove(a2prev, unif(global_rng), n);
-                    int a2move = a2->playMove(a1prev, unif(global_rng), n);
-                    // accumulate into thread-local arrays
-                    scoreTracker[idy][idx] += payoffMatrix[a1move][a2move];
-                    scoreTracker[match.second][match.first] += payoffMatrix[a2move][a1move];
+                    scoreTracker[i][j] += (*scoreTracker_threads[t])[i][j];
+                    (*scoreTracker_threads[t])[i][j]=0.0; //zeroing out score tracker
                 }
-                a1->reset();
-                a2->reset();
             }
-        };
+        }
 
         // Normalize by playedTracker (avoid div by zero)
         for (int i=0;i<yLen;++i) for (int j=0;j<xLen;++j) {
@@ -427,10 +509,12 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
             totalScore[i][j] += scoreTracker[i][j];
         }
 
+       
+
         // Evolution
         AgentGrid newGrid = agentGrid; // shallow copy of shared_ptrs
         double shiftPercentage = 0.2;
-        double mutationRate = 0.01;
+        //double mutationRate = 0.01;
         // build padded score toroidally
         for (int i=0;i<yLen;++i) for (int j=0;j<xLen;++j) paddedScore[i+1][j+1] = scoreTracker[i][j];
         // wrap edges
@@ -473,41 +557,47 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
                 if (ux < 0) ux = xLen + ux;
                 else if (ux >= xLen) ux -= 1;
 
+                //can probably combine these loops? later problem. 
+                //(uy,ux) is the best in the grid of 3. The thing to evolve from. it can't have already evolved. 
                 // shift
-                vector<double> ruleShift(agentGrid[idy][idx]->rule.size(), 0.0);
+                vector<double> ruleShift(agentGrid[idy][idx].rule.size(), 0.0);
                 if (evolveVec[count] < chance) {
-                    auto &src = agentGrid[uy][ux]->rule;
-                    auto &dst = agentGrid[idy][idx]->rule;
+                    auto &src = agentGrid[uy][ux].rule;
+                    auto &dst = agentGrid[idy][idx].rule;
                     for (size_t k=0;k<dst.size();++k) ruleShift[k] = (src[k] - dst[k]) * shiftPercentage;
                 }
                 // mutate
-                vector<double> ruleShift2(agentGrid[idy][idx]->rule.size(), 0.0);
+                vector<double> ruleShift2(agentGrid[idy][idx].rule.size(), 0.0);
                 for (size_t k=0;k<ruleShift2.size();++k) {
-                    ruleShift2[k] = ((uniform01() * 2.0) - 1.0) * mutationRate;
+                    ruleShift2[k] = ((uniform01() * 2.0) - 1.0) * MUTATIONRATE;
                 }
-                array<double,4> newRule = agentGrid[idy][idx]->rule;
-                for (size_t k=0;k<newRule.size();++k) newRule[k] = newRule[k] + ruleShift[k] + ruleShift2[k];
+                array<double,4>& oldRule = agentGrid[idy][idx].rule;
+                array<double,4>& newRule = newRules[idy][idx];
+                for (size_t k=0;k<oldRule.size();++k){
+                    newRule[k] = oldRule[k] + ruleShift[k] + ruleShift2[k];
+                }
                 for (size_t k=0;k<newRule.size();++k) {
                     if (newRule[k] < 0.0) newRule[k] = 0.0;
                     if (newRule[k] > 1.0) newRule[k] = 1.0;
                 }
                 // assign to newGrid copy
                 // make a fresh BLANK agent to hold new rule while preserving other meta
-                auto newAgent = make_shared<BLANK>(agentGrid[idy][idx]->startMove);
-                newAgent->name = agentGrid[idy][idx]->name;
-                newAgent->rule = newRule;
-                newAgent->startMove = agentGrid[idy][idx]->startMove;
-                newAgent -> mutationRate = agentGrid[idy][idx]->mutationRate;
-                newAgent->prevMove = agentGrid[idy][idx]->prevMove;
-                newGrid[idy][idx] = newAgent;
+                
+            }
+
+        }
+
+        for (int idy=0;idy<yLen;idy++){
+            for(int idx=0;idx<xLen;idx++){
+                agentGrid[idx][idy].rule = newRules[idx][idy]; //this is a full coppy. NOT just coppying pointers. 
             }
         }
-        agentGrid = newGrid;
+
 
         if (round == 1 || ((round % snapEvery) == 0 && (round / snapEvery) > 0)) {
             // push snapshots
             out.scoreSnaps.push_back(totalScore);
-            auto ruleSnap = agentRuleSnapshot(agentGrid);
+            auto ruleSnap = agentRuleSnapshot(agentGrid,mutationRate);
             // For storage simplicity, push ruleSnaps as flattened vectors per cell
             // but we'll convert to vector<vector<vector<double>>> where innermost is concatenated rule vector per cell
             size_t ruleLen = 5;//(int)agentGrid[0][0]->rule.size();
@@ -522,6 +612,13 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
             //cout << "progress: " << (round / snapEvery) << " / "<<snaps<<"\n";
         }
     } // end rounds
+
+    //destroing the dynamically allocated score and play trackers from each thread
+    for(int i=0;i<maxThreads;i++){
+        delete playedTracker_threads[i];
+        delete scoreTracker_threads[i];
+    }
+
 
     out.totalScore = totalScore;
     return out;
@@ -608,44 +705,50 @@ void write_nonCumulative_csv(const vector<vector<vector<double>>> &ncs, const st
 main (testing)
 --------------------------- */
 
-int main(int argc, char** argv) {
+// -DP00={self.payoffMatrix[0][0]}",f"-DP01={self.payoffMatrix[0][1]}",f"-DP10={self.payoffMatrix[1][0]}",f"-DP11={self.payoffMatrix[1][1]}",
+//                       f"-DGRIDN={self.gridN}",f"-DRES0={self.res[0]}",f"-DRES1={self.res[1]}",f"-DMAXN={self.maxN}",f"-DROUNDS={self.rounds}",f"-DITERS={self.iters}",
+//                       f"-DSNAPS={self.snaps}",f"-DEVOLUTIONRATE={self.evolutionRate}",f"-DMUTATIONRATE={self.mutationRate}",f"-DEVOLUTIONCHANCE={self.evolutionChance}",
+//                       f"-DGRIDSEED={self.gridSeed}",f"-DPLAYSEED={self.playSeed}",f"-DSUBPATH={subPath}",f"-DTILESIZE={self.tileSize}"
+
+int main() {
     auto setUpStartTime = std::chrono::high_resolution_clock::now();
-    if (argc < 6) {
-        cerr << "Usage: ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round\n";
-        return 1;
-    }
+    // if (argc < 6) {
+    //     cerr << "Usage: ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round\n";
+    //     return 1;
+    // }
 
     payoffMatrix = {
-        {atof(argv[1]), atof(argv[2])}, //atof interprets the strings as floats
-        {atof(argv[3]), atof(argv[4])}
+        {P00, P01}, //atof interprets the strings as floats
+        {P10, P11}
     };
 
 
-    int gridN = atoi(argv[5]); //atoi interterprets strings as integers
-    pair<int,int> res = {atoi(argv[6]),atoi(argv[7])}; //what exactly is res?
-    int maxN = atoi(argv[8]); //what is maxN? how does it relate to gridN
-    int rounds = atoi(argv[9]);
-    int iters = atoi(argv[10]);
-    int snaps = atoi(argv[11]);
+    const int gridN = GRIDN; //atoi interterprets strings as integers
+    if (gridN%32!=0){
+        throw std::runtime_error("gridN must be a multiple of 32");
+    }
+    pair<int,int> res = {RES0,RES1}; //what exactly is res?
+    const int maxN = MAXN; //what is maxN? how does it relate to gridN
+    constexpr int rounds = ROUNDS;
+    int iters = ITERS;
+    int snaps = SNAPS;
 
-    double evolutionRate = atof(argv[12]); //what is evolution rate - it doesn't looke like it is ever used?
-    double mutationRate = atof(argv[13]); //mutation rate randomly changes also the strategies a bit every round
-    double evolutionChance = atof(argv[14]); //evolution Chance - change of adopting winner's strategy?
-    unsigned int gridSeed = (unsigned) std::atoi(argv[15]); //randomness for distributing agents
-    unsigned int playSeed = (unsigned) std::atoi(argv[16]); //randomness for playing
+    double evolutionRate = EVOLUTIONRATE; //what is evolution rate - it doesn't looke like it is ever used?
+    double mutationRate = MUTATIONRATE; //mutation rate randomly changes also the strategies a bit every round
+    double evolutionChance = EVOLUTIONCHANCE; //evolution Chance - change of adopting winner's strategy?
+    unsigned int gridSeed = (unsigned) GRIDSEED; //randomness for distributing agents
+    unsigned int playSeed = (unsigned) PLAYSEED; //randomness for playing
     // global_rng.seed(playSeed);
     // grid_rng.seed(gridSeed);
-    double inversionPercentage = atof(argv[17]);//0; //what is inversion percentage and inversion round?
-    int inversionRound = atoi(argv[18]);//1;
 
 
-    std::string path = argv[17];
+    const std::string path = SUBPATH;
 
     AgentGrid grid = blankGrid(gridN, res, gridSeed, mutationRate);
 
     auto setUpEndTime = chrono::high_resolution_clock::now();
 
-    TorusResult resu = torusTournament(grid, iters, rounds, snaps, evolutionRate, mutationRate, evolutionChance, inversionPercentage, inversionRound);
+    TorusResult resu = torusTournament(grid, iters, rounds, snaps, evolutionRate, evolutionChance, mutationRate); //should agentGrid be passed by reference?
 
     auto simulationEndTime = chrono::high_resolution_clock::now();
 

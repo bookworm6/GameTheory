@@ -336,7 +336,7 @@ def writePerfResults(perfResults,filePaths):
 
 
 def perfFileStructure(independentVarVal, independentVarName, executableName):
-    timeTypes = ['totalTime', 'setUpTime', 'simulationTime', 'timePerIter', 'reportingTime']
+    timeTypes = ['totalTime', 'setUpTime', 'simulationTime', 'timePerRound', 'reportingTime']
     perfPath = Path("./Perf")
     perfPath.mkdir(exist_ok=True)
     perfFilePaths = []
