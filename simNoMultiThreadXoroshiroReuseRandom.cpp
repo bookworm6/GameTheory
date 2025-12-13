@@ -1,6 +1,6 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simMultiThreadXoroshiro.cpp -o simMultiThreadXoroshiro -pthread
+// Compile: g++ -O3 -std=c++17 simNoMultiThreadXoroshiroReuseRandom.cpp -o simNoMultiThreadXoroshiroReuseRandom
 // Run: ./sim
 //
 // Outputs CSV files:
@@ -13,11 +13,9 @@
 
 /*run a version of this wim without the experiment py file using 
 ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round
-./sim 1 5 0 3 64 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 5000
+./sim 1 5 0 3 32 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 5000
 
 */
-
-//This version I make it so that assigning matchups doesn't use sin and cos. 
 #define NOMINMAX
 #include <fstream>
 #include <thread>
@@ -39,7 +37,7 @@
 #include <cstdlib>
 #include <memory>
 #include <array>
-#include "RandomGenerator/Xoshiro.hpp" //random number generator header library from https://www.pcg-random.org/download.html 
+#include "RandomGenerator/Xoshiro.hpp" 
 using namespace std;
 
 /* ---------------------------
@@ -51,6 +49,36 @@ XoshiroCpp::Xoroshiro128Plus grid_rng;
 XoshiroCpp::Xoroshiro128Plus global_rng;
 std::chrono::high_resolution_clock::time_point setUpEndTime; //note: looked on stack overflow for type because documentation was confusing https://stackoverflow.com/questions/31497531/what-is-the-type-of-stdchronohigh-resolution-clocknow-in-c11#:~:text=Okay%2C%20I%20see%20the%20error,1 
 
+struct Random16{
+
+    uint64_t normalize; //this will be the value of 16 bits of ones. it will be computed at compile time. 
+    uint64_t currentRandomNumber;
+    bool generateNew;
+    int bitsAvailable;
+    XoshiroCpp::Xoroshiro128Plus local_rng;
+
+ 
+    Random16(int seed):
+        local_rng(seed){
+        normalize = ((uint64_t)(-1))>>48; //this will be the value of 16 bits of ones. it will be computed at compile time. 
+        currentRandomNumber = 0;
+        bitsAvailable=0;
+        
+    }
+
+    float generate (){
+        if (bitsAvailable==0){
+            currentRandomNumber = local_rng();
+            bitsAvailable = 64;
+        }
+        int toReturn = ((uint64_t)currentRandomNumber)>>(bitsAvailable-16);
+        bitsAvailable-=16;
+        int shiftAmount = 64-bitsAvailable;
+        currentRandomNumber = ((uint64_t)(currentRandomNumber<<shiftAmount))>>shiftAmount;
+        return (float)toReturn/(float)normalize;
+    }
+    
+};
 
 double uniform01() {
     return std::uniform_real_distribution<double>(0.0, 1.0)(global_rng);
@@ -397,6 +425,9 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
 
     setUpEndTime = chrono::high_resolution_clock::now();
 
+    Random16 generator(934857029); //give actual seed later
+
+
     for (int round=0; round<rounds; ++round) {
         if (round == inversionRound) {
             //invertCentralBlock(agentGrid, inversionPercentage);
@@ -406,91 +437,31 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         vector<vector<int>> playedTracker(yLen, vector<int>(xLen, 0));
         vector<vector<double>> scoreTracker(yLen, vector<double>(xLen, 0.0));
 
-        // BEFORE launching threads: create deterministic thread seeds and decide nThreads
-        int nThreads = std::min(static_cast<int>(std::thread::hardware_concurrency()), (int) yLen);
-        if (nThreads < 1) nThreads = 1;
-        //nThreads=1;
+        
 
-        // Create thread seeds deterministically using global_rng (seeded in main)
-        vector<uint64_t> thread_seeds(nThreads);
-        for (int t = 0; t < nThreads; ++t) {
-            thread_seeds[t] = global_rng(); // deterministic sequence
-        }
+        //this is the main simulation loop. This SHOULD take the majority of the time
+        for (int idy = 0; idy < yLen; ++idy) {
+            for (int idx = 0; idx < xLen; ++idx) {
+                auto match = matchups[idy][idx];
+                auto a1 = agentGrid[idy][idx];
+                auto a2 = agentGrid[match.second][match.first];
 
-        // Prepare per-thread accumulators
-        vector<vector<vector<double>>> scoreTracker_threads(nThreads,
-            vector<vector<double>>(yLen, vector<double>(xLen, 0.0)));
-        vector<vector<vector<int>>> playedTracker_threads(nThreads,
-            vector<vector<int>>(yLen, vector<int>(xLen, 0)));
+                playedTracker[idy][idx] += 1;
+                playedTracker[match.second][match.first] += 1;
 
-        // Worker now receives thread id and seed; 
-        auto worker = [&](int t_id, int startRow, int endRow) {
-            XoshiroCpp::Xoroshiro128Plus local_rng(thread_seeds[t_id]); //Question: do you really need 64 bits of randomness? and/or could a thread use smaller parts of a random number before generating a new one. 
-            std::uniform_real_distribution<double> unif(0.0, 1.0);
-
-            auto local_uniform01 = [&](){ return unif(local_rng); };
-
-            // local references to thread-local accumulators
-            auto &scoreTracker_local = scoreTracker_threads[t_id];
-            auto &playedTracker_local = playedTracker_threads[t_id];
-
-            for (int idy = startRow; idy < endRow; ++idy) {
-                for (int idx = 0; idx < xLen; ++idx) {
-                    auto match = matchups[idy][idx];
-                    auto a1 = agentGrid[idy][idx];
-                    auto a2 = agentGrid[match.second][match.first];
-
-                    // increment played count for both players in THREAD-LOCAL arrays
-                    playedTracker_local[idy][idx] += 1;
-                    playedTracker_local[match.second][match.first] += 1;
-
-                    // generate seeds for iterated plays using local_rng
-                    vector<double> seeds(2 * iters);
-                    for (int s = 0; s < 2*iters; ++s) seeds[s] = local_uniform01();
-
-                    for (int n = 0; n < iters; ++n) {
-                        unsigned long long a1prev = a1->prevMove;
-                        unsigned long long a2prev = a2->prevMove;
-                        int a1move = a1->playMove(a2prev, seeds[n], n);
-                        int a2move = a2->playMove(a1prev, seeds[n+iters], n);
-                        // accumulate into thread-local arrays
-                        scoreTracker_local[idy][idx] += payoffMatrix[a1move][a2move];
-                        scoreTracker_local[match.second][match.first] += payoffMatrix[a2move][a1move];
-                    }
-                    a1->reset();
-                    a2->reset();
+                for (int n = 0; n < iters; ++n) {
+                    unsigned long long a1prev = a1->prevMove;
+                    unsigned long long a2prev = a2->prevMove;
+                    int a1move = a1->playMove(a2prev, generator.generate(), n);
+                    int a2move = a2->playMove(a1prev, generator.generate(), n);
+                    // accumulate into thread-local arrays
+                    scoreTracker[idy][idx] += payoffMatrix[a1move][a2move];
+                    scoreTracker[match.second][match.first] += payoffMatrix[a2move][a1move];
                 }
+                a1->reset();
+                a2->reset();
             }
         };
-
-
-        int rowsPerThread = std::max(1, ( (int) yLen) / nThreads);
-        int row = 0;
-        vector<thread> threads;
-        for (int t = 0; t < nThreads; ++t) {
-            int startR = row;
-            int endR = std::min((int) yLen, row + rowsPerThread);
-            if (t == nThreads - 1) endR = yLen;
-            threads.emplace_back(worker, t, startR, endR);
-            row = endR;
-        }
-        for (auto &th : threads) if (th.joinable()) th.join();
-        threads.clear();
-
-        // zero out global trackers then sum thread-local results deterministically
-        for (int i=0;i<yLen;++i) for (int j=0;j<xLen;++j) {
-            playedTracker[i][j] = 0;
-            scoreTracker[i][j] = 0.0;
-        }
-
-        for (int t=0; t<nThreads; ++t) {
-            for (int i=0;i<yLen;++i) {
-                for (int j=0;j<xLen;++j) {
-                    playedTracker[i][j] += playedTracker_threads[t][i][j];
-                    scoreTracker[i][j] += scoreTracker_threads[t][i][j];
-                }
-            }
-        }
 
         // Normalize by playedTracker (avoid div by zero)
         for (int i=0;i<yLen;++i) for (int j=0;j<xLen;++j) {
@@ -730,7 +701,7 @@ int main(int argc, char** argv) {
     std::chrono::duration<double> simulationTime = simulationEndTime - setUpEndTime;
     std::chrono::duration<double> reportingResultsTime = reportingEndTime - simulationEndTime;
 
-    cout<< "TotalTime: " << totalElapsedTime.count()<<", SetUpTime: "<<setUpTime.count()<<", SimulationTime: "<<simulationTime.count()<<", TimePerRound: "<<simulationTime.count()/iters<<", ReportingTime: "<<reportingResultsTime.count()<<endl;
+    cout<< "TotalTime: " << totalElapsedTime.count()<<", SetUpTime: "<<setUpTime.count()<<", SimulationTime: "<<simulationTime.count()<<", TimePerRound: "<<simulationTime.count()/rounds<<", ReportingTime: "<<reportingResultsTime.count()<<endl;
 
     return 0;
 }

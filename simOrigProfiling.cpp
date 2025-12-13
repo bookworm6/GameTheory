@@ -702,6 +702,8 @@ int main() {
     constexpr int rounds = ROUNDS;
     int iters = ITERS;
     int snaps = SNAPS;
+    int inversionRound=10;
+    double inversionPercentage = 0.1;
 
     double evolutionRate = EVOLUTIONRATE; //what is evolution rate - it doesn't looke like it is ever used?
     double mutationRate = MUTATIONRATE; //mutation rate randomly changes also the strategies a bit every round

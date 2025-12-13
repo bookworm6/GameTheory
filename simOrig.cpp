@@ -13,7 +13,7 @@
 
 /*run a version of this wim without the experiment py file using 
 ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round
-./sim 1 5 0 3.3 512 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 5000
+./sim 1 5 0 3.3 512 4 4 1 10 60 0 0.01 0.001 0.2 3 2 0 5000
 
 */
 #define NOMINMAX

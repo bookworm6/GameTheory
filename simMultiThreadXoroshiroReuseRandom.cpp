@@ -1,6 +1,6 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simMultiThreadXoroshiroReuseRandom.cpp -o simMultiThreadXoroshiroReuseRandom -pthread
+// Compile: g++ -g -O3 -std=c++17 simMultiThreadXoroshiroReuseRandom.cpp -o simMultiThreadXoroshiroReuseRandom -pthread
 // Run: ./sim
 //
 // Outputs CSV files:
@@ -443,6 +443,8 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         int nThreads = std::min(static_cast<int>(std::thread::hardware_concurrency()), (int) yLen);
         if (nThreads < 1) nThreads = 1;
 
+        //nThreads=1;
+
         // Create thread seeds deterministically using global_rng (seeded in main)
         vector<uint64_t> thread_seeds(nThreads);
         for (int t = 0; t < nThreads; ++t) {
@@ -457,11 +459,8 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
 
         // Worker now receives thread id and seed; 
         auto worker = [&](int t_id, int startRow, int endRow) {
-            XoshiroCpp::Xoroshiro128Plus local_rng(thread_seeds[t_id]); //Question: do you really need 64 bits of randomness? and/or could a thread use smaller parts of a random number before generating a new one. 
-            
-            //std::uniform_real_distribution<double> unif(0.0, 1.0);
-            
-            uint64_t normalize = ((uint64_t)(-1))>>48; //this will be the value of 16 bits of ones. it will be computed at compile time. 
+            XoshiroCpp::Xoroshiro128Plus local_rng(thread_seeds[t_id]); //Question: do you really need 64 bits of randomness? and/or could a thread use smaller parts of a random number before generating a new one.             
+            constexpr uint64_t max = ((uint64_t)(-1))>>48; //this will be the max that an integer with 16 bits could be. 
             uint64_t currentRandomNumber=0;
             int bitsAvailable=0;
 
@@ -473,8 +472,8 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
                 int toReturn = ((uint64_t)currentRandomNumber)>>(bitsAvailable-16);
                 bitsAvailable-=16;
                 int shiftAmount = 64-bitsAvailable;
-                currentRandomNumber = ((uint64_t)(currentRandomNumber<<shiftAmount))>>shiftAmount;
-                return (float)toReturn/(float)normalize;
+                currentRandomNumber = ((uint64_t)(currentRandomNumber<<shiftAmount))>>shiftAmount; //this will be some random integer in the range of 0 to normalize
+                return (float)toReturn/(float)max;
             };
 
             // local references to thread-local accumulators
