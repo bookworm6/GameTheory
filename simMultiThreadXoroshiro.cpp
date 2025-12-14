@@ -575,7 +575,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         }
         agentGrid = newGrid;
 
-        if (round == 1 || ((round % snapEvery) == 0 && (round / snapEvery) > 0)) {
+        if ((round == 1 && snaps!=0) || ((round % snapEvery) == 0 && (round / snapEvery) > 0)) {
             // push snapshots
             out.scoreSnaps.push_back(totalScore);
             auto ruleSnap = agentRuleSnapshot(agentGrid);
@@ -730,7 +730,7 @@ int main(int argc, char** argv) {
     std::chrono::duration<double> simulationTime = simulationEndTime - setUpEndTime;
     std::chrono::duration<double> reportingResultsTime = reportingEndTime - simulationEndTime;
 
-    cout<< "TotalTime: " << totalElapsedTime.count()<<", SetUpTime: "<<setUpTime.count()<<", SimulationTime: "<<simulationTime.count()<<", TimePerRound: "<<simulationTime.count()/iters<<", ReportingTime: "<<reportingResultsTime.count()<<endl;
+    cout<< "TotalTime: " << totalElapsedTime.count()<<", SetUpTime: "<<setUpTime.count()<<", SimulationTime: "<<simulationTime.count()<<", TimePerRound: "<<simulationTime.count()/rounds<<", ReportingTime: "<<reportingResultsTime.count()<<endl;
 
     return 0;
 }

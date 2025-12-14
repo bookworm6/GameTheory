@@ -10,8 +10,8 @@ import numpy as np
 
 print("running")
 
-timeType = "simulationTime" #options are "totalTime" "timePerRound" "simulationTime" "setUpTime" "reportingTime"
-files = glob.glob(f"TileSize/{timeType}_*.csv")
+timeType = "timePerRound" #options are "totalTime" "timePerRound" "simulationTime" "setUpTime" "reportingTime"
+files = glob.glob(f"Perf/ToGraph/{timeType}_*.csv")
 contents=[]
 names=[]
 independentVars=[]
@@ -83,7 +83,7 @@ check.on_clicked(toggle_line)
 # ax.set_yscale("log")
 # ax.set_xscale("log")
 ax.set_xlabel(independentVarName)
-ax.set_ylabel("time")
+ax.set_ylabel(f"{timeType} (seconds)")
 ax.set_title(f"{timeType} vs {independentVarName}")
 ax.grid(True)
 

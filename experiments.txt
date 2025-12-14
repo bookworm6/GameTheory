@@ -1,6 +1,3 @@
-Data/simOrig/2/exp1
-Data/simOrig/2/exp2
-Data/simOrig/2/exp3
-Data/simOrig/2/exp4
-Data/simOrig/2/exp5
-Data/simOrig/2/exp6
+Data/simOneThreadXoroshiro/49/exp1
+Data/simOneThreadXoroshiro/49/exp2
+Data/simOneThreadXoroshiro/49/exp3

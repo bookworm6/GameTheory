@@ -1,6 +1,6 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -g -O3 -std=c++17 simMultiThreadXoroshiroReuseRandom.cpp -o simMultiThreadXoroshiroReuseRandom -pthread
+// Compile: g++ -O3 -std=c++17 simMultiThreadXoroshiroReuseRandom.cpp -o simMultiThreadXoroshiroReuseRandom -pthread
 // Run: ./sim
 //
 // Outputs CSV files:
@@ -458,6 +458,8 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
             vector<vector<int>>(yLen, vector<int>(xLen, 0)));
 
         // Worker now receives thread id and seed; 
+
+
         auto worker = [&](int t_id, int startRow, int endRow) {
             XoshiroCpp::Xoroshiro128Plus local_rng(thread_seeds[t_id]); //Question: do you really need 64 bits of randomness? and/or could a thread use smaller parts of a random number before generating a new one.             
             constexpr uint64_t max = ((uint64_t)(-1))>>48; //this will be the max that an integer with 16 bits could be. 
@@ -621,7 +623,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         }
         agentGrid = newGrid;
 
-        if (round == 1 || ((round % snapEvery) == 0 && (round / snapEvery) > 0)) {
+        if ((round == 1&&snaps!=0) || ((round % snapEvery) == 0 && (round / snapEvery) > 0)) {
             // push snapshots
             out.scoreSnaps.push_back(totalScore);
             auto ruleSnap = agentRuleSnapshot(agentGrid);

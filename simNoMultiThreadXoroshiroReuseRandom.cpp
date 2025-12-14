@@ -421,6 +421,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
     else{
         snapEvery = max(1, rounds / snaps);
     }
+    cout<<"snap every = "<<snapEvery<<std::endl;
     vector<vector<double>> paddedScore(yLen+2, vector<double>(xLen+2, 0.0));
 
     setUpEndTime = chrono::high_resolution_clock::now();
@@ -546,7 +547,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         }
         agentGrid = newGrid;
 
-        if (round == 1 || ((round % snapEvery) == 0 && (round / snapEvery) > 0)) {
+        if ((round == 1 && snaps!=0) || ((round % snapEvery) == 0 && (round / snapEvery) > 0)) {
             // push snapshots
             out.scoreSnaps.push_back(totalScore);
             auto ruleSnap = agentRuleSnapshot(agentGrid);

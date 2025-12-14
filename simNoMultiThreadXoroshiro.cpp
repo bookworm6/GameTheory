@@ -515,7 +515,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         }
         agentGrid = newGrid;
 
-        if (round == 1 || ((round % snapEvery) == 0 && (round / snapEvery) > 0)) {
+        if ((round == 1 && snaps!=0) || ((round % snapEvery) == 0 && (round / snapEvery) > 0)) {
             // push snapshots
             out.scoreSnaps.push_back(totalScore);
             auto ruleSnap = agentRuleSnapshot(agentGrid);
