@@ -1,6 +1,6 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 PROFILEsimMultiThreadXoroshiroReuseRandomCompiletimeMaxReciprocal.cpp -o PROFILEMultiThreadXoroshiroReuseRandomMaxReciprocal -pthread
+// Compile: g++ -O3 -std=c++17 simMultiThreadXoroshiroTiling.cpp -o simMultiThreadXoroshiroTiling -pthread
 // Run: ./sim
 //
 // Outputs CSV files:
@@ -39,7 +39,7 @@
 #include <cstdlib>
 #include <memory>
 #include <array>
-#include "RandomGenerator/Xoshiro.hpp" 
+#include "RandomGenerator/Xoshiro.hpp" //random number generator header library from https://www.pcg-random.org/download.html 
 using namespace std;
 
 /* ---------------------------
@@ -47,41 +47,9 @@ using namespace std;
    --------------------------- */
 
 using u64 = unsigned long long;
-
-
 XoshiroCpp::Xoroshiro128Plus grid_rng;
 XoshiroCpp::Xoroshiro128Plus global_rng;
 std::chrono::high_resolution_clock::time_point setUpEndTime; //note: looked on stack overflow for type because documentation was confusing https://stackoverflow.com/questions/31497531/what-is-the-type-of-stdchronohigh-resolution-clocknow-in-c11#:~:text=Okay%2C%20I%20see%20the%20error,1 
-
-
-uint32_t globalRandomNumber = global_rng();
-int numBitsRemaining = 32;
-
-//TODO delete eventually. here for debugging
-void printBits (int toPrint){
-    std::cout << std::bitset<sizeof(toPrint) * 8>(toPrint) << "   ";
-}
-
-uint32_t getRandomBits(int numBits){
-    //sets the leftmost numBits of the globalRandomNumber to 0, and ignores them from now on. returns those leftmost bits as the least siginificant bits of return value. 
-    uint32_t finalBits=0;
-    if (numBitsRemaining<numBits){
-        finalBits = globalRandomNumber; //length of num bits left
-        numBits-=numBitsRemaining; //num bits that still need to be generated
-        finalBits=finalBits<<numBits; //those final bits become the more signicicant bits of the thing returned
-        globalRandomNumber=global_rng();//generating new bits
-        numBitsRemaining=32;
-
-    }
-    uint32_t randomBits = globalRandomNumber>>(numBitsRemaining-numBits);
-    randomBits+=finalBits;
-    globalRandomNumber = globalRandomNumber-(randomBits<<(numBitsRemaining-numBits));
-    numBitsRemaining-=numBits;
-    return randomBits;
-
-
-}
-
 
 
 double uniform01() {
@@ -349,35 +317,35 @@ struct TorusResult {
 
 int flatten_index(int y, int x, int X) { return y*X + x; }
 
-
-static const pair<int,int> DIRS[8] = {
-    { 1, 0}, {-1, 0}, {0, 1}, {0,-1},
-    { 1, 1}, { 1,-1}, {-1, 1}, {-1,-1}
-};
-
 vector<vector<pair<int,int>>> pickOpponents(const AgentGrid &agentGrid) {
     int yLen = (int)agentGrid.size();
     int xLen = (int)agentGrid[0].size();
-
+    int N = yLen * xLen; //PA note: N never changes does it? why not make it a field of agent grid? (or better yet, if you can get parameters at compile time, calculate it at compile time)
+    vector<double> angles(N);
+    for (int i=0;i<N;++i) angles[i] = uniform01() * 2.0 * M_PI; //list of randomly generated angles. Questions: do you really need to make this array here? why not calculate an angle and then put it in xs and xy directly
+    vector<int> xs(N), ys(N);
+    for (int i=0;i<N;++i) {
+        xs[i] = (int)round(cos(angles[i]));
+        ys[i] = (int)round(sin(angles[i])); //<xs[i],ys[i]> is a unit vector in direction angle[i]
+    }
     vector<vector<pair<int,int>>> opponent(yLen, vector<pair<int,int>>(xLen));
-
     for (int iy=0; iy<yLen; ++iy) {
         for (int ix=0; ix<xLen; ++ix) {
-            auto unitVector = DIRS[getRandomBits(3)]; //getRandomBits(3) will return 3 bits (ie an integer in range [0,7])
-            int xLoc = ix + unitVector.first; 
+            int id = iy * xLen + ix; //id maps an index in the 2d array to an index in angles, xs, and xy
+            int xLoc = (ix + xs[id]) % xLen; 
             if (xLoc < 0) xLoc += xLen;
-            if (xLoc>=xLen) xLoc-=xLen;
-            int yLoc = iy + unitVector.second; 
+            int yLoc = (iy + ys[id]) % yLen;
             if (yLoc < 0) yLoc += yLen;
-            if (yLoc>=yLen) yLoc-=yLen;
             opponent[iy][ix] = {xLoc, yLoc}; //why do all the angle stuff? why not just pick an element neighboring the cell with a certain probability (if you wanted you could calculate the probability of corner vs staight on)
         }
     }
     return opponent;
 }
 
-
-
+static const pair<int,int> DIRS[8] = {
+    { 1, 0}, {-1, 0}, {0, 1}, {0,-1},
+    { 1, 1}, { 1,-1}, {-1, 1}, {-1,-1}
+};
 
 vector<vector<pair<int,int>>> pickOpponentsNew(const AgentGrid &agents) {
     int Y = agents.size();
@@ -404,29 +372,116 @@ vector<vector<array<double,5>>> agentRuleSnapshot(const AgentGrid &agents) {
     for(int i=0; i<Y; ++i){
         for(int j=0; j<X; ++j) {
             for(int k=0; k<4; ++k) snap[i][j][k] = agents[i][j]->rule[k];
-            //std::cout<<"mutation rate is "<<agents[i][j]->mutationRate<<"      ";
             snap[i][j][4] = agents[i][j]->mutationRate;
         }
     }
     return snap;
 }
-
-std::pair<double,double> local_uniform01(XoshiroCpp::Xoroshiro128Plus& rng){
-    constexpr firstmask = ((uint64_t)(-1))>>32;
-    constexpr secondmask = firstmask<<32;
-    constexpr double maxReciprocal = 1/((double)firstmask); //this will be the reciprocal of the max that an integer with 16 bits could be.
-    uint64_t currentRandomNumber = rng();
-    return std::make_pair<double,double>()
-    if (bitsAvailable==0){
-        currentRandomNumber = rng();
-        bitsAvailable = 64;
+void wrapRow(int tileRowIndex, int globalRowIndex, int tileStartX, int lastStart, int gxi, int txi, int endxi, int gridN, vector<vector<double>>& globalScoreTracker, vector<vector<int>>& globalPlayedTracker, vector<vector<double>>& threadScoreTracker, vector<vector<int>>& threadPlayedTracker){
+    if (tileStartX==0){ //top left corner of thread accumulator when it needs to wrap
+        globalScoreTracker[globalRowIndex][gridN-1]+=threadScoreTracker[tileRowIndex][txi];
+        threadScoreTracker[tileRowIndex][txi]=0;
+        globalPlayedTracker[globalRowIndex][gridN-1]+=threadPlayedTracker[tileRowIndex][txi];
+        threadPlayedTracker[tileRowIndex][txi]=0;
+        gxi+=1; //taking the left columb off of future loops because it needs to be wrapped
+        txi+=1;
     }
-    int toReturn = ((uint64_t)currentRandomNumber)>>(bitsAvailable-16);
-    bitsAvailable-=16;
-    int shiftAmount = 64-bitsAvailable;
-    currentRandomNumber = ((uint64_t)(currentRandomNumber<<shiftAmount))>>shiftAmount; //this will be some random integer in the range of 0 to 1/maxReciprical
-    return toReturn*maxReciprocal; 
+    if (tileStartX==lastStart){ //top right corner of thread accumulator when it needs to wrap
+        globalScoreTracker[globalRowIndex][0]+=threadScoreTracker[tileRowIndex][endxi-1]; //ednxi is the size of a dimension thread accumulator vector. it is decremented once i have wrapped because I am ignoring it. 
+        threadScoreTracker[tileRowIndex][endxi-1]=0;
+        globalPlayedTracker[globalRowIndex][0]+=threadPlayedTracker[tileRowIndex][endxi-1]; //ednxi is the size of a dimension thread accumulator vector. it is decremented once i have wrapped because I am ignoring it. 
+        threadPlayedTracker[tileRowIndex][endxi-1]=0;
+        endxi-=1;
+    }
+    for (int gx = gxi, tx=txi; tx<endxi;tx++,gx++){ //this doesn't touch the first or last column in case they need to be wrapped
+        globalScoreTracker[globalRowIndex][gx]+=threadScoreTracker[tileRowIndex][tx];
+        threadScoreTracker[tileRowIndex][tx]=0;
+    }
+    for (int gx = gxi, tx=txi; tx<endxi;tx++,gx++){ //this doesn't touch the first or last column in case they need to be wrapped
+        globalPlayedTracker[globalRowIndex][gx]+=threadPlayedTracker[tileRowIndex][tx];
+        threadPlayedTracker[tileRowIndex][tx]=0;
+    }
 }
+
+void accumulate(vector<thread>& threads, array<array<int,2>,4>& tileStartCoords, vector<vector<vector<double>>>& scoreTracker_threads,vector<vector<vector<int>>>& playedTracker_threads, vector<vector<double>>& scoreTracker,vector<vector<int>>& playedTracker,int gridN,int lastStart){
+    int numthreads = threads.size();
+    for (auto &th : threads){
+        if (th.joinable()){
+            th.join();
+        } 
+    } 
+    threads.clear();
+
+    for (int tid=0;tid<numthreads;tid++){
+        int tileStartY = tileStartCoords[tid][0];
+        int tileStartX = tileStartCoords[tid][1];
+        
+        int gyi=tileStartY-1;  //these are the initial values to use in the loops below. //gy is the coordinate on the global accumulator grid, and ty is the cooresponding coordinate on the thread specific accumulator grid
+        int gxi=tileStartX-1;
+        int tyi = 0;
+        int txi=0;
+        int endyi=scoreTracker_threads[0].size();
+        int endxi=scoreTracker_threads[0].size();
+
+        //this is the math for the edge of the torus where a threads accumulator vector wraps off of the end of the global accumulator vector
+        if (tileStartY==0 ){ //top row 
+            wrapRow(0, gridN-1, tileStartX, lastStart, gxi, txi, endxi, gridN, scoreTracker, playedTracker, scoreTracker_threads[tid], playedTracker_threads[tid]);
+
+            wrapRow(0, gridN-1, tileStartX, lastStart, gxi, txi, endxi, gridN, scoreTracker, playedTracker, scoreTracker_threads[tid], playedTracker_threads[tid]);
+            tyi++;
+            gyi++;
+        }
+        if (tileStartY==lastStart){
+            wrapRow(endyi-1, 0, tileStartX, lastStart, gxi, txi, endxi, gridN, scoreTracker, playedTracker, scoreTracker_threads[tid], playedTracker_threads[tid]);
+            endyi--;
+        }
+        //by the time it gets here, anything that needed to be wrapped in both directions has already been wrapped. tyi, gyi, and edyi give the rows i need to deal with
+        //this loop has bad locality, but the alternative is to put an if condition in a way bigger loop, which would be more expensive i think 
+        if (tileStartX == 0){ //left col
+            for (int gy = gxi, ty=tyi; ty<endyi;ty++,gy++){ //this doesn't touch the first or last column in case they need to be wrapped. 
+                scoreTracker[gy][gridN-1]+=scoreTracker_threads[tid][ty][0];
+                scoreTracker_threads[tid][ty][0]=0;
+            }
+            //seperate loops for better locality
+            for (int gy = gxi, ty=tyi; ty<endyi;ty++,gy++){ //this doesn't touch the first or last column in case they need to be wrapped. 
+                playedTracker[gy][gridN-1]+=playedTracker_threads[tid][ty][0];
+                playedTracker_threads[tid][ty][0]=0;
+            }
+            txi++;
+            gxi++;
+        }
+        if (tileStartX==lastStart){ //right col
+            for (int gy = gxi, ty=tyi; ty<endyi;ty++,gy++){ //this doesn't touch the first or last column in case they need to be wrapped. 
+                scoreTracker[gy][0]+=scoreTracker_threads[tid][ty][endxi-1];
+                scoreTracker_threads[tid][ty][endxi-1]=0;
+            }
+            for (int gy = gxi, ty=tyi; ty<endyi;ty++,gy++){ //this doesn't touch the first or last column in case they need to be wrapped. 
+                playedTracker[gy][0]+=playedTracker_threads[tid][ty][endxi-1];
+                playedTracker_threads[tid][ty][endxi-1]=0;
+            }
+            endxi--;
+        }
+
+            
+        //This handles the interior of tile and any edges that are not also edges of the agent grid 
+        for (int gy = gyi,ty =tyi; ty<endyi;gy++,ty++){ //gy is the coordinate on the global accumulator grid, and ty is the cooresponding coordinate on the thread specific accumulator grid
+            for(int gx=gxi,tx=txi; tx<endxi;gx++,gy++){
+                scoreTracker[gy][gx]+=scoreTracker_threads[tid][ty][tx];
+                scoreTracker_threads[tid][ty][tx]=0;
+            }
+        }
+
+        for (int gy = gyi,ty =tyi; ty<endyi;gy++,ty++){ //gy is the coordinate on the global accumulator grid, and ty is the cooresponding coordinate on the thread specific accumulator grid
+            for(int gx=gxi,tx=txi; tx<endxi;gx++,gy++){
+                playedTracker[gy][gx]+=playedTracker_threads[tid][ty][tx];
+                playedTracker_threads[tid][ty][tx]=0;
+            }
+        }
+    }
+
+}
+
+
 
 TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snaps, float evolutionRate, //could agentGrid be passed by reference?
     float evolutionChance, float mutationRate, float inversionPercentage, int inversionRound) {
@@ -459,46 +514,47 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         // BEFORE launching threads: create deterministic thread seeds and decide nThreads
         int nThreads = std::min(static_cast<int>(std::thread::hardware_concurrency()), (int) yLen);
         if (nThreads < 1) nThreads = 1;
-
         //nThreads=1;
 
-        // Create thread seeds deterministically using global_rng (seeded in main)
-        vector<uint64_t> thread_seeds(nThreads);
-        for (int t = 0; t < nThreads; ++t) {
-            thread_seeds[t] = global_rng(); // deterministic sequence
-        }
+        // // Create thread seeds deterministically using global_rng (seeded in main)
+        // vector<uint64_t> thread_seeds(nThreads);
+        // for (int t = 0; t < nThreads; ++t) {
+        //     thread_seeds[t] = global_rng(); // deterministic sequence
+        // }
 
         // Prepare per-thread accumulators
-        vector<vector<vector<double>>> scoreTracker_threads(nThreads,
-            vector<vector<double>>(yLen, vector<double>(xLen, 0.0)));
+        int tileSize = 256;
+
+        vector<vector<vector<double>>> scoreTracker_threads(nThreads, //initialize this with the correct number. might be num threads or tile size?
+            vector<vector<double>>(tileSize, vector<double>(tileSize+2, 0.0)));
         vector<vector<vector<int>>> playedTracker_threads(nThreads,
-            vector<vector<int>>(yLen, vector<int>(xLen, 0)));
+            vector<vector<int>>(tileSize, vector<int>(tileSize+2, 0))); //each tile is dependent on the neighbors in either direction. (1,1) in the accumulator is the coordinate of (startY, startX) 
 
         // Worker now receives thread id and seed; 
+        auto worker = [&](int t_id, int rngSeed, int startY, int startX, int endY, int endX) {
+            XoshiroCpp::Xoroshiro128Plus local_rng(rngSeed); //Question: do you really need 64 bits of randomness? and/or could a thread use smaller parts of a random number before generating a new one. 
+            std::uniform_real_distribution<double> unif(0.0, 1.0);
 
-
-        auto worker = [&](int t_id, int startRow, int endRow) {
-            XoshiroCpp::Xoroshiro128Plus local_rng(thread_seeds[t_id]); //Question: do you really need 64 bits of randomness? and/or could a thread use smaller parts of a random number before generating a new one.             
-            uint64_t currentRandomNumber=0;
-            int bitsAvailable=0;
+            auto local_uniform01 = [&](){ return unif(local_rng); };
 
             // local references to thread-local accumulators
             auto &scoreTracker_local = scoreTracker_threads[t_id];
             auto &playedTracker_local = playedTracker_threads[t_id];
 
-            for (int idy = startRow; idy < endRow; ++idy) {
-                for (int idx = 0; idx < xLen; ++idx) {
+            for (int idy = startY; idy < endY; ++idy) {
+                for (int idx = startX; idx < endX; ++idx) { //endY is exclusive
                     auto match = matchups[idy][idx];
                     auto a1 = agentGrid[idy][idx];
                     auto a2 = agentGrid[match.second][match.first];
 
                     // increment played count for both players in THREAD-LOCAL arrays
-                    playedTracker_local[idy][idx] += 1;
-                    playedTracker_local[match.second][match.first] += 1;
+                    
+                    playedTracker_local[idy-startY+1][idx-startX+1] += 1; 
+                    playedTracker_local[match.second-startY+1][match.first-startX+1] += 1;
 
                     // generate seeds for iterated plays using local_rng
                     vector<double> seeds(2 * iters);
-                    for (int s = 0; s < 2*iters; ++s) seeds[s] = local_uniform01(bitsAvailable,currentRandomNumber,local_rng);
+                    for (int s = 0; s < 2*iters; ++s) seeds[s] = local_uniform01();
 
                     for (int n = 0; n < iters; ++n) {
                         unsigned long long a1prev = a1->prevMove;
@@ -506,8 +562,8 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
                         int a1move = a1->playMove(a2prev, seeds[n], n);
                         int a2move = a2->playMove(a1prev, seeds[n+iters], n);
                         // accumulate into thread-local arrays
-                        scoreTracker_local[idy][idx] += payoffMatrix[a1move][a2move];
-                        scoreTracker_local[match.second][match.first] += payoffMatrix[a2move][a1move];
+                        scoreTracker_local[idy-startY+1][idx-startX+1] += payoffMatrix[a1move][a2move];
+                        scoreTracker_local[match.second-startY+1][match.first-startX+1] += payoffMatrix[a2move][a1move];
                     }
                     a1->reset();
                     a2->reset();
@@ -515,19 +571,36 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
             }
         };
 
-
-        int rowsPerThread = std::max(1, ( (int) yLen) / nThreads);
-        int row = 0;
+        
+       
         vector<thread> threads;
-        for (int t = 0; t < nThreads; ++t) {
-            int startR = row;
-            int endR = std::min((int) yLen, row + rowsPerThread);
-            if (t == nThreads - 1) endR = yLen;
-            threads.emplace_back(worker, t, startR, endR);
-            row = endR;
+        array<array<int,2>,4> tileStartCoords;
+        int threadid=0;
+        int currentThreads=0;
+        int numThreadsMadeSoFar=0;
+        int lastStart = agentGrid.size()-tileSize;
+        for (int startY=0;startY<=lastStart;startY+=tileSize){
+            for (int startX = 0; startX<=lastStart;startX+=tileSize) {
+                std::cout<<"about to make thread num "<<numThreadsMadeSoFar<<endl;
+                threads.emplace_back(worker,threadid,global_rng(),startY,startX,startY+tileSize,startX+tileSize);
+                 std::cout<<"made thread num "<<numThreadsMadeSoFar<<endl;
+                 numThreadsMadeSoFar++;
+                tileStartCoords[currentThreads][0]=startY;                     //tile startCoords hold the coordinate that (1,1) in the threads accumulator vector will map to
+                tileStartCoords[currentThreads][1]=startX;
+                currentThreads++;
+                threadid++;
+                if (currentThreads==4){
+                    accumulate(threads, tileStartCoords, scoreTracker_threads, playedTracker_threads, scoreTracker, playedTracker,xLen,lastStart);
+                    threadid=0;
+                    currentThreads=0;
+                }
+            }
         }
-        for (auto &th : threads) if (th.joinable()) th.join();
-        threads.clear();
+        if (threads.size()>0){ 
+            accumulate(threads, tileStartCoords, scoreTracker_threads, playedTracker_threads, scoreTracker, playedTracker,xLen,lastStart);
+        }
+        
+        
 
         // zero out global trackers then sum thread-local results deterministically
         for (int i=0;i<yLen;++i) for (int j=0;j<xLen;++j) {
@@ -620,14 +693,14 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
                 newAgent->name = agentGrid[idy][idx]->name;
                 newAgent->rule = newRule;
                 newAgent->startMove = agentGrid[idy][idx]->startMove;
-                newAgent->prevMove = agentGrid[idy][idx]->prevMove;
                 newAgent -> mutationRate = agentGrid[idy][idx]->mutationRate;
+                newAgent->prevMove = agentGrid[idy][idx]->prevMove;
                 newGrid[idy][idx] = newAgent;
             }
         }
         agentGrid = newGrid;
 
-        if ((round == 1&&snaps!=0) || ((round % snapEvery) == 0 && (round / snapEvery) > 0)) {
+        if ((round == 1 && snaps!=0) || ((round % snapEvery) == 0 && (round / snapEvery) > 0)) {
             // push snapshots
             out.scoreSnaps.push_back(totalScore);
             auto ruleSnap = agentRuleSnapshot(agentGrid);
@@ -733,8 +806,6 @@ main (testing)
 
 int main(int argc, char** argv) {
     auto setUpStartTime = std::chrono::high_resolution_clock::now();
-    
-
     if (argc < 6) {
         cerr << "Usage: ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round\n";
         return 1;

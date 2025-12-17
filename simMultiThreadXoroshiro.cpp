@@ -378,6 +378,7 @@ vector<vector<array<double,5>>> agentRuleSnapshot(const AgentGrid &agents) {
     return snap;
 }
 
+
 TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snaps, float evolutionRate, //could agentGrid be passed by reference?
     float evolutionChance, float mutationRate, float inversionPercentage, int inversionRound) {
 

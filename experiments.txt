@@ -1,3 +1,1 @@
-Data/simOneThreadXoroshiro/49/exp1
-Data/simOneThreadXoroshiro/49/exp2
-Data/simOneThreadXoroshiro/49/exp3
+Data/exp6

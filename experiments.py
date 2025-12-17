@@ -276,8 +276,8 @@ def superPlot(tracker="experiments.txt"):
     stateSpace4d(np.array(finalRules))
 
 
-builder = ExperimentBuilder("./simMultiThreadXoroshiro", "./simMultiThreadXoroshiroReuseRandom", "./simNoMultiThreadXoroshiro","./simOrig","./simPragmaMultiThreadXoroshiroTilingResuseRandom" )
-paramdict = {"repeats": 1, "rounds": 1, "snaps": 1, "gridN": 128, "varySeed": False, 
+builder = ExperimentBuilder("./DEBUSsimMultiThreadXoroshiroTiling") #ExperimentBuilder("./simMultiThreadXoroshiro", "./simMultiThreadXoroshiroReuseRandom", "./simNoMultiThreadXoroshiro","./simOrig","./simPragmaMultiThreadXoroshiroTilingResuseRandom" )
+paramdict = {"repeats": 1, "rounds": 100, "snaps": 10, "gridN": 128, "varySeed": False, 
                             "payoffMatrix": [[1,5],[0,3.3]], "inversionPercentage": 0.1,
                             "mutationRate": 0.01, "res": (2,2)} #goal gridN : 128
 exp = builder.fromParamDict(paramdict)
