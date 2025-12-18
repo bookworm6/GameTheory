@@ -386,16 +386,6 @@ void printPlayed(vector<vector<int>> played){
         cout<<endl;
     }
 }
-
-void printScores(vector<vector<double>> scores){
-    cout<<"printing score 2D array"<<endl;
-    for (int i=0;i<scores.size();i++){
-        for(int j=0;j<scores.size();j++){
-            cout<<scores[i][j]<<", ";
-        }
-        cout<<endl;
-    }
-}
 void wrapRow(int tileRowIndex, int globalRowIndex, int tileStartX, int lastStart, int gxi, int txi, int endxi, int gridN, vector<vector<double>>& globalScoreTracker, vector<vector<int>>& globalPlayedTracker, vector<vector<double>>& threadScoreTracker, vector<vector<int>>& threadPlayedTracker){
     if (tileStartX==0){ //top left corner of thread accumulator when it needs to wrap
         globalScoreTracker[globalRowIndex][gridN-1]+=threadScoreTracker[tileRowIndex][txi];
@@ -422,7 +412,7 @@ void wrapRow(int tileRowIndex, int globalRowIndex, int tileStartX, int lastStart
     }
 }
 
-void accumulate(vector<thread>& threads, vector<array<int,2>>& tileStartCoords, vector<vector<vector<double>>>& scoreTracker_threads,vector<vector<vector<int>>>& playedTracker_threads, vector<vector<double>>& scoreTracker,vector<vector<int>>& playedTracker,int gridN,int lastStart){
+void accumulate(vector<thread>& threads, array<array<int,2>,4>& tileStartCoords, vector<vector<vector<double>>>& scoreTracker_threads,vector<vector<vector<int>>>& playedTracker_threads, vector<vector<double>>& scoreTracker,vector<vector<int>>& playedTracker,int gridN,int lastStart){
     int numthreads = threads.size();
     for (auto &th : threads){
         if (th.joinable()){
@@ -431,8 +421,8 @@ void accumulate(vector<thread>& threads, vector<array<int,2>>& tileStartCoords, 
     } 
     threads.clear();
 
-    cout<<"accumulate called and starting global scored tracker is ";
-    printScores(scoreTracker);
+    cout<<"accumulate called and starting global played tracker is ";
+    printPlayed(playedTracker);
     cout<<endl<<endl;
 
 
@@ -440,8 +430,8 @@ void accumulate(vector<thread>& threads, vector<array<int,2>>& tileStartCoords, 
         int tileStartY = tileStartCoords[tid][0];
         int tileStartX = tileStartCoords[tid][1];
 
-        cout<<"thread "<<tid<<" has start cord ("<<tileStartY<<","<<tileStartX<<"). its thread specific score tracker is below ";
-        printScores(scoreTracker_threads[tid]);
+        cout<<"thread "<<tid<<" has start cord ("<<tileStartY<<","<<tileStartX<<"). its thread specific played tracker is below ";
+        printPlayed(playedTracker_threads[tid]);
         cout<<endl;
         
         int gyi=tileStartY-1;  //these are the initial values to use in the loops below. //gy is the coordinate on the global accumulator grid, and ty is the cooresponding coordinate on the thread specific accumulator grid
@@ -506,8 +496,8 @@ void accumulate(vector<thread>& threads, vector<array<int,2>>& tileStartCoords, 
             }
         }
     }
-    cout<<endl<<"after summing all the scored trackers. the global scored tracker is as follows"<<endl;
-    printScores(scoreTracker);
+    cout<<endl<<"after summing all the played trackers. the global played tracker is as follows"<<endl;
+    printPlayed(playedTracker);
     cout<<endl<<endl<<endl<<endl;
 
 
@@ -627,17 +617,17 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         
        
         vector<thread> threads;
-        vector<array<int,2>> tileStartCoords(nThreads);
+        array<array<int,2>,4> tileStartCoords;
         int threadid=0;
         int currentThreads=0;
-        //int numThreadsMadeSoFar=0;
+        int numThreadsMadeSoFar=0;
         int lastStart = agentGrid.size()-tileSize;
         for (int startY=0;startY<=lastStart;startY+=tileSize){
             for (int startX = 0; startX<=lastStart;startX+=tileSize) {
-                // std::cout<<"about to make thread num "<<numThreadsMadeSoFar<<endl;
-                // threads.emplace_back(worker,threadid,global_rng(),startY,startX,startY+tileSize,startX+tileSize);
-                //  std::cout<<"made thread num "<<numThreadsMadeSoFar<<endl;
-                 //numThreadsMadeSoFar++;
+                std::cout<<"about to make thread num "<<numThreadsMadeSoFar<<endl;
+                threads.emplace_back(worker,threadid,global_rng(),startY,startX,startY+tileSize,startX+tileSize);
+                 std::cout<<"made thread num "<<numThreadsMadeSoFar<<endl;
+                 numThreadsMadeSoFar++;
                 tileStartCoords[currentThreads][0]=startY;                     //tile startCoords hold the coordinate int the global grid that (1,1) in the threads accumulator vector will map to
                 tileStartCoords[currentThreads][1]=startX;
                 currentThreads++;
