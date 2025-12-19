@@ -360,7 +360,7 @@ def perfFileStructure(independentVarVal, independentVarName, executableName):
 
 reps = 50
 independentVarVal = np.array([128,256,512])
-executables = ["./simMultiThreadXoroshiroTiling","./simMultiThreadXoroshiro"]#["./simMultiThreadXoroshiro", "./simOneThreadXoroshiro","./simNoMultiThreadXoroshiro","./simOrig"]
+executables = ["./DEBUSsimMultiThreadXoroshiroTiling","./simMultiThreadXoroshiroTiling","./simMultiThreadXoroshiro"]#["./simMultiThreadXoroshiro", "./simOneThreadXoroshiro","./simNoMultiThreadXoroshiro","./simOrig"]
 independentVarName = "gridN"
 paramdict = {"repeats": 1, "rounds": 20, "snaps": 0, "gridN": 512, "varySeed": False, 
                             "payoffMatrix": [[1,5],[0,3.3]], "inversionPercentage": 0.1,

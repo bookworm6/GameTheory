@@ -1,7 +1,7 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simMultiThreadXoroshiroTilingVectors.cpp -o simMultiThreadXoroshiroTilingVectors -pthread
-// Run: ./simMultiThreadXoroshiroTilingVectors 1 5 0 3.3 32 2 2 1 1 60 0 0.01 0.2 0.01 1321  8076 0.1 5000 128
+// Compile: g++ -O3 -std=c++17 DEBUGsimMultiThreadXoroshiroTilingVector.cpp -o DEBUSsimMultiThreadXoroshiroTilingVector -pthread
+// Run: ./DEBUSsimMultiThreadXoroshiroTiling 1 5 0 3.3 512 2 2 1 20 60 0 0.01 0.2 0.01 1321  8076 0.1 5000
 //
 // Outputs CSV files:
 //  - scoreSnaps.csv (snapshots of cumulative score at snapshot times)
@@ -378,19 +378,10 @@ vector<vector<array<double,5>>> agentRuleSnapshot(const AgentGrid &agents) {
     return snap;
 }
 void printPlayed(vector<vector<int>> played){
-    cout<<"printing score 2D array"<<endl;
+    cout<<"printing played 2D array"<<endl;
     for (int i=0;i<played.size();i++){
         for(int j=0;j<played.size();j++){
             cout<<played[i][j]<<", ";
-        }
-        cout<<endl;
-    }
-}
-void printScored(vector<vector<double>> scored){
-    cout<<"printing score 2D array"<<endl;
-    for (int i=0;i<scored.size();i++){
-        for(int j=0;j<scored.size();j++){
-            cout<<scored[i][j]<<", ";
         }
         cout<<endl;
     }
@@ -430,8 +421,8 @@ void accumulate(vector<thread>& threads, vector<array<int,2>>& tileStartCoords, 
     } 
     threads.clear();
 
-    // cout<<"accumulate called and starting global played tracker is ";
-    // printScored(scoreTracker);
+    // cout<<"accumulate called numThreads is "<<numthreads<<" and starting global played tracker is ";
+    // printPlayed(playedTracker);
     // cout<<endl<<endl;
 
 
@@ -440,7 +431,7 @@ void accumulate(vector<thread>& threads, vector<array<int,2>>& tileStartCoords, 
         int tileStartX = tileStartCoords[tid][1];
 
         // cout<<"thread "<<tid<<" has start cord ("<<tileStartY<<","<<tileStartX<<"). its thread specific played tracker is below ";
-        // printScored(scoreTracker_threads[tid]);
+        // printPlayed(playedTracker_threads[tid]);
         // cout<<endl;
         
         int gyi=tileStartY-1;  //these are the initial values to use in the loops below. //gy is the coordinate on the global accumulator grid, and ty is the cooresponding coordinate on the thread specific accumulator grid
@@ -506,7 +497,7 @@ void accumulate(vector<thread>& threads, vector<array<int,2>>& tileStartCoords, 
         }
     }
     // cout<<endl<<"after summing all the played trackers. the global played tracker is as follows"<<endl;
-    // printScored(scoreTracker);
+    // printPlayed(playedTracker);
     // cout<<endl<<endl<<endl<<endl;
 
 
@@ -518,7 +509,6 @@ void accumulate(vector<thread>& threads, vector<array<int,2>>& tileStartCoords, 
 
 TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snaps, float evolutionRate, //could agentGrid be passed by reference?
     float evolutionChance, float mutationRate, float inversionPercentage, int inversionRound, int tileSize) {
-    //tileSize = 128;
 
     int yLen = (int)agentGrid.size();
     int xLen = (int)agentGrid[0].size();
@@ -630,11 +620,12 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         int threadid=0;
         int currentThreads=0;
         int numThreadsMadeSoFar=0;
+        //std::cout<<"nThreads is "<<nThreads<<endl;
         int lastStart = agentGrid.size()-tileSize;
         for (int startY=0;startY<=lastStart;startY+=tileSize){
             for (int startX = 0; startX<=lastStart;startX+=tileSize) {
                 // std::cout<<"about to make thread num "<<numThreadsMadeSoFar<<endl;
-                threads.emplace_back(worker,threadid,global_rng(),startY,startX,startY+tileSize,startX+tileSize);
+                 threads.emplace_back(worker,threadid,global_rng(),startY,startX,startY+tileSize,startX+tileSize);
                 //  std::cout<<"made thread num "<<numThreadsMadeSoFar<<endl;
                  numThreadsMadeSoFar++;
                 tileStartCoords[currentThreads][0]=startY;                     //tile startCoords hold the coordinate int the global grid that (1,1) in the threads accumulator vector will map to
@@ -888,7 +879,9 @@ int main(int argc, char** argv) {
     // grid_rng.seed(gridSeed);
     double inversionPercentage = atof(argv[17]);//0; //what is inversion percentage and inversion round?
     int inversionRound = atoi(argv[18]);//1;
-    int tileSize = atoi(argv[19]);
+
+    int tileSize=atoi(argv[19]);
+    std::cout<<"tile size is"<<tileSize;
 
 
     std::string path = argv[17];

@@ -1,7 +1,7 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: g++ -O3 -std=c++17 simMultiThreadXoroshiroTilingVectors.cpp -o simMultiThreadXoroshiroTilingVectors -pthread
-// Run: ./simMultiThreadXoroshiroTilingVectors 1 5 0 3.3 32 2 2 1 1 60 0 0.01 0.2 0.01 1321  8076 0.1 5000 128
+// Compile: g++ -O3 -std=c++17 DEBUGsimMultiThreadXoroshiroTiling.cpp -o DEBUSsimMultiThreadXoroshiroTiling -pthread
+// Run: ./DEBUSsimMultiThreadXoroshiroTiling 1 5 0 3.3 512 2 2 1 20 60 0 0.01 0.2 0.01 1321  8076 0.1 5000
 //
 // Outputs CSV files:
 //  - scoreSnaps.csv (snapshots of cumulative score at snapshot times)
@@ -386,15 +386,6 @@ void printPlayed(vector<vector<int>> played){
         cout<<endl;
     }
 }
-void printScored(vector<vector<double>> scored){
-    cout<<"printing score 2D array"<<endl;
-    for (int i=0;i<scored.size();i++){
-        for(int j=0;j<scored.size();j++){
-            cout<<scored[i][j]<<", ";
-        }
-        cout<<endl;
-    }
-}
 void wrapRow(int tileRowIndex, int globalRowIndex, int tileStartX, int lastStart, int gxi, int txi, int endxi, int gridN, vector<vector<double>>& globalScoreTracker, vector<vector<int>>& globalPlayedTracker, vector<vector<double>>& threadScoreTracker, vector<vector<int>>& threadPlayedTracker){
     if (tileStartX==0){ //top left corner of thread accumulator when it needs to wrap
         globalScoreTracker[globalRowIndex][gridN-1]+=threadScoreTracker[tileRowIndex][txi];
@@ -421,7 +412,7 @@ void wrapRow(int tileRowIndex, int globalRowIndex, int tileStartX, int lastStart
     }
 }
 
-void accumulate(vector<thread>& threads, vector<array<int,2>>& tileStartCoords, vector<vector<vector<double>>>& scoreTracker_threads,vector<vector<vector<int>>>& playedTracker_threads, vector<vector<double>>& scoreTracker,vector<vector<int>>& playedTracker,int gridN,int lastStart){
+void accumulate(vector<thread>& threads, array<array<int,2>,4>& tileStartCoords, vector<vector<vector<double>>>& scoreTracker_threads,vector<vector<vector<int>>>& playedTracker_threads, vector<vector<double>>& scoreTracker,vector<vector<int>>& playedTracker,int gridN,int lastStart){
     int numthreads = threads.size();
     for (auto &th : threads){
         if (th.joinable()){
@@ -431,7 +422,7 @@ void accumulate(vector<thread>& threads, vector<array<int,2>>& tileStartCoords, 
     threads.clear();
 
     // cout<<"accumulate called and starting global played tracker is ";
-    // printScored(scoreTracker);
+    // printPlayed(playedTracker);
     // cout<<endl<<endl;
 
 
@@ -440,7 +431,7 @@ void accumulate(vector<thread>& threads, vector<array<int,2>>& tileStartCoords, 
         int tileStartX = tileStartCoords[tid][1];
 
         // cout<<"thread "<<tid<<" has start cord ("<<tileStartY<<","<<tileStartX<<"). its thread specific played tracker is below ";
-        // printScored(scoreTracker_threads[tid]);
+        // printPlayed(playedTracker_threads[tid]);
         // cout<<endl;
         
         int gyi=tileStartY-1;  //these are the initial values to use in the loops below. //gy is the coordinate on the global accumulator grid, and ty is the cooresponding coordinate on the thread specific accumulator grid
@@ -506,7 +497,7 @@ void accumulate(vector<thread>& threads, vector<array<int,2>>& tileStartCoords, 
         }
     }
     // cout<<endl<<"after summing all the played trackers. the global played tracker is as follows"<<endl;
-    // printScored(scoreTracker);
+    // printPlayed(playedTracker);
     // cout<<endl<<endl<<endl<<endl;
 
 
@@ -517,8 +508,7 @@ void accumulate(vector<thread>& threads, vector<array<int,2>>& tileStartCoords, 
 
 
 TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snaps, float evolutionRate, //could agentGrid be passed by reference?
-    float evolutionChance, float mutationRate, float inversionPercentage, int inversionRound, int tileSize) {
-    //tileSize = 128;
+    float evolutionChance, float mutationRate, float inversionPercentage, int inversionRound) {
 
     int yLen = (int)agentGrid.size();
     int xLen = (int)agentGrid[0].size();
@@ -557,6 +547,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         // }
 
         // Prepare per-thread accumulators
+        int tileSize = 2;
 
         vector<vector<vector<double>>> scoreTracker_threads(nThreads, //initialize this with the correct number. might be num threads or tile size?
             vector<vector<double>>(tileSize+2, vector<double>(tileSize+2, 0.0)));
@@ -626,7 +617,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         
        
         vector<thread> threads;
-        vector<array<int,2>> tileStartCoords(nThreads);
+        array<array<int,2>,4> tileStartCoords;
         int threadid=0;
         int currentThreads=0;
         int numThreadsMadeSoFar=0;
@@ -634,7 +625,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         for (int startY=0;startY<=lastStart;startY+=tileSize){
             for (int startX = 0; startX<=lastStart;startX+=tileSize) {
                 // std::cout<<"about to make thread num "<<numThreadsMadeSoFar<<endl;
-                threads.emplace_back(worker,threadid,global_rng(),startY,startX,startY+tileSize,startX+tileSize);
+                // threads.emplace_back(worker,threadid,global_rng(),startY,startX,startY+tileSize,startX+tileSize);
                 //  std::cout<<"made thread num "<<numThreadsMadeSoFar<<endl;
                  numThreadsMadeSoFar++;
                 tileStartCoords[currentThreads][0]=startY;                     //tile startCoords hold the coordinate int the global grid that (1,1) in the threads accumulator vector will map to
@@ -888,7 +879,6 @@ int main(int argc, char** argv) {
     // grid_rng.seed(gridSeed);
     double inversionPercentage = atof(argv[17]);//0; //what is inversion percentage and inversion round?
     int inversionRound = atoi(argv[18]);//1;
-    int tileSize = atoi(argv[19]);
 
 
     std::string path = argv[17];
@@ -896,7 +886,7 @@ int main(int argc, char** argv) {
     AgentGrid grid = blankGrid(gridN, res, gridSeed, mutationRate);
 
 
-    TorusResult resu = torusTournament(grid, iters, rounds, snaps, evolutionRate, mutationRate, evolutionChance, inversionPercentage, inversionRound,tileSize);
+    TorusResult resu = torusTournament(grid, iters, rounds, snaps, evolutionRate, mutationRate, evolutionChance, inversionPercentage, inversionRound);
 
     auto simulationEndTime = chrono::high_resolution_clock::now();
 
