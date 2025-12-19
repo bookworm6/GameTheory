@@ -11,7 +11,7 @@ import numpy as np
 print("running")
 
 timeType = "timePerRound" #options are "totalTime" "timePerRound" "simulationTime" "setUpTime" "reportingTime"
-files = glob.glob(f"Perf/ToGraph/{timeType}_*.csv")
+files = glob.glob(f"Perf/{timeType}_*.csv")
 contents=[]
 names=[]
 independentVars=[]
