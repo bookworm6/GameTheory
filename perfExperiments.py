@@ -55,7 +55,6 @@ class Experiment: #
         self.varySeed = False
         self.inversionPercentage = 0
         self.inversionRound = self.rounds // 2
-        self.tileSize=16
         
         ### Experiment execution
         self.execPath = execPath
@@ -104,8 +103,6 @@ class Experiment: #
                 self.inversionPercentage = float(value)
             case "inversionRound":
                 self.inversionRound = int(value)
-            case "tileSize":
-                self.tileSize = int(value)
 
     #returns performance results for this run in numpy array [totalTime, setUpTime, simulationTime, timePerRound, reportingTime];
     def run(self):
@@ -125,7 +122,7 @@ class Experiment: #
                 str(self.maxN), str(self.rounds), str(self.iters),
                 str(self.snaps), str(self.evolutionRate), str(self.mutationRate), 
                 str(self.evolutionChance), str(self.gridSeed), str(self.playSeed),
-                str(subPath),str(self.inversionRound),str(self.tileSize)],capture_output=True,text=True, check=True
+                str(subPath)],capture_output=True,text=True, check=True
                 )
                 return self.parsePerfString(capturedOutput.stdout)
             except subprocess.CalledProcessError:
@@ -146,12 +143,12 @@ class Experiment: #
     def saveParams(self):
         with open(str(self.logPath/Path("params.csv")), "w") as f:
             writer = csv.writer(f)
-            writer.writerow(["p00", "p01","p10","p11","gridN","res0","res1","maxN", "rounds", "iters", "snaps", "evolutionRate", "evolutionChance", "mutationRate", "seed1", "seed2", "inversionPercentage", "inversionRound","tileSize"])
+            writer.writerow(["p00", "p01","p10","p11","gridN","res0","res1","maxN", "rounds", "iters", "snaps", "evolutionRate", "evolutionChance", "mutationRate", "seed1", "seed2", "inversionPercentage", "inversionRound"])
             writer.writerow([
                 self.payoffMatrix[0][0],self.payoffMatrix[0][1],self.payoffMatrix[1][0],self.payoffMatrix[1][1],
                 self.gridN, self.res[0], self.res[1], self.maxN, self.rounds, self.iters, self.snaps,
                 self.evolutionRate, self.evolutionChance, self.mutationRate, self.gridSeed, self.playSeed,
-                self.inversionPercentage, self.inversionRound,self.tileSize
+                self.inversionPercentage, self.inversionRound
                 ])
     
     def __repr__(self):
@@ -360,11 +357,11 @@ def perfFileStructure(independentVarVal, independentVarName, executableName):
 
 reps = 50
 independentVarVal = np.array([128,256,512])
-executables = ["./simMultiThreadXoroshiroTiling","./simMultiThreadXoroshiro"]#["./simMultiThreadXoroshiro", "./simOneThreadXoroshiro","./simNoMultiThreadXoroshiro","./simOrig"]
+executables = ["./simTwoThreadXoroshiro"]#["./simMultiThreadXoroshiro", "./simOneThreadXoroshiro","./simNoMultiThreadXoroshiro","./simOrig"]
 independentVarName = "gridN"
 paramdict = {"repeats": 1, "rounds": 20, "snaps": 0, "gridN": 512, "varySeed": False, 
                             "payoffMatrix": [[1,5],[0,3.3]], "inversionPercentage": 0.1,
-                            "mutationRate": 0.01, "res": (2,2), "tileSize": 64} #goal gridN : 128
+                            "mutationRate": 0.01, "res": (2,2)} #goal gridN : 128
 for executable in executables:
     DATA_PATH = DATA_PATH/executable[2:]
     DATA_PATH.mkdir(parents=True,exist_ok=False)
