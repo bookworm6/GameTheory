@@ -421,7 +421,7 @@ void wrapRow(int tileRowIndex, int globalRowIndex, int tileStartX, int lastStart
     }
 }
 
-void accumulate(vector<thread>& threads, array<array<int,2>,4>& tileStartCoords, vector<vector<vector<double>>>& scoreTracker_threads,vector<vector<vector<int>>>& playedTracker_threads, vector<vector<double>>& scoreTracker,vector<vector<int>>& playedTracker,int gridN,int lastStart){
+void accumulate(vector<thread>& threads, vector<array<int,2>>& tileStartCoords, vector<vector<vector<double>>>& scoreTracker_threads,vector<vector<vector<int>>>& playedTracker_threads, vector<vector<double>>& scoreTracker,vector<vector<int>>& playedTracker,int gridN,int lastStart){
     int numthreads = threads.size();
     for (auto &th : threads){
         if (th.joinable()){
@@ -626,7 +626,7 @@ TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snap
         
        
         vector<thread> threads;
-        array<array<int,2>,4> tileStartCoords;
+        vector<array<int,2>> tileStartCoords(nThreads);
         int threadid=0;
         int currentThreads=0;
         int numThreadsMadeSoFar=0;
