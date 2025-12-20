@@ -55,7 +55,7 @@ class Experiment: #
         self.varySeed = False
         self.inversionPercentage = 0
         self.inversionRound = self.rounds // 2
-        self.tileSize=16
+        self.tileSize=64
         
         ### Experiment execution
         self.execPath = execPath
@@ -118,6 +118,7 @@ class Experiment: #
                 self.seed2 = int(random.rand()*10000)
             try: 
                 print("CWD: ", os.getcwd())
+                print(f"{self.execPath} {str(self.payoffMatrix[0][0])} {str(self.payoffMatrix[0][1])} {str(self.payoffMatrix[1][0])} {str(self.payoffMatrix[1][1])} {str(self.gridN)} {str(self.res[0])} {str(self.res[1])} {str(self.maxN)} {str(self.rounds)} {str(self.iters)} {str(self.snaps)} {str(self.evolutionRate)} {str(self.mutationRate)} {str(self.evolutionChance)} {str(self.gridSeed)} {str(self.playSeed)} {str(subPath)} {str(self.inversionRound)} {str(self.tileSize)}")
                 capturedOutput = subprocess.run( #run compiled simulation excecutable
                 [self.execPath, str(self.payoffMatrix[0][0]), str(self.payoffMatrix[0][1]),
                 str(self.payoffMatrix[1][0]), str(self.payoffMatrix[1][1]),
@@ -356,11 +357,12 @@ def perfFileStructure(independentVarVal, independentVarName, executableName):
         
 
         
-
+#"./simMultiThreadXoroshiroTilingOrig",
 
 reps = 50
 independentVarVal = np.array([128,256,512])
-executables = ["./DEBUSsimMultiThreadXoroshiroTiling","./simMultiThreadXoroshiroTiling","./simMultiThreadXoroshiro"]#["./simMultiThreadXoroshiro", "./simOneThreadXoroshiro","./simNoMultiThreadXoroshiro","./simOrig"]
+executables = ["./simOrig","./simNoMultiThreadXoroshiro","./simMultiThreadXoroshiroTilingOrig","./simMultiThreadXoroshiro","./simOneThreadXoroshiro","./simMultiThreadXoroshiroTilingOrigFixedDataRace"]
+#executables = ["./DEBUSsimMultiThreadXoroshiroTilingOrig","./DEBUSsimMultiThreadXoroshiroTilingVector","./simMultiThreadXoroshiroTilingVectors","./simMultiThreadXoroshiro"]#["./simMultiThreadXoroshiro", "./simOneThreadXoroshiro","./simNoMultiThreadXoroshiro","./simOrig"]
 independentVarName = "gridN"
 paramdict = {"repeats": 1, "rounds": 20, "snaps": 0, "gridN": 512, "varySeed": False, 
                             "payoffMatrix": [[1,5],[0,3.3]], "inversionPercentage": 0.1,

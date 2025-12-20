@@ -1,14 +1,7 @@
 // sim.cpp
 // Single-file C++ port of the Python code you supplied.
-// Compile: run commands...
-// export LDFLAGS="-L/usr/local/opt/libomp/lib"
-// export CPPFLAGS="-I/usr/local/opt/libomp/include"
-/*
-clang++ -g -DP00=1 -DP01=5 -DP10=0 -DP11=3.3 -DGRIDN=512 -DRES0=2 -DRES1=2 -DMAXN=1 -DROUNDS=250 -DITERS=60 -DSNAPS=10 -DEVOLUTIONRATE=0.01 -DMUTATIONRATE=0.001 -DEVOLUTIONCHANCE=0.2 -DGRIDSEED=1298347509 -DPLAYSEED=497698134 '-DSUBPATH="./Data/Perf"' -DTILESIZE=32 -I/usr/local/opt/libomp/include -L/usr/local/opt/libomp/lib -Xpreprocessor -fopenmp -O3 -std=c++17 -lomp simPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacrosNoPointers.cpp -o simNoPointersPragmaMultiThreadXoroshiroTilingResuseRandomCompilationMacros
-*/
-// Note: I used chat gpt to figure out how to compile this. 
-// 
-// Run: ./sim
+// Compile: g++ -O3 -std=c++17 simMultiThreadXoroshiroTilingOrig.cpp -o simMultiThreadXoroshiroTilingOrig -pthread
+// Run: ./DEBUSsimMultiThreadXoroshiroTiling 1 5 0 3.3 512 2 2 1 20 60 0 0.01 0.2 0.01 1321  8076 0.1 5000
 //
 // Outputs CSV files:
 //  - scoreSnaps.csv (snapshots of cumulative score at snapshot times)
@@ -20,11 +13,11 @@ clang++ -g -DP00=1 -DP01=5 -DP10=0 -DP11=3.3 -DGRIDN=512 -DRES0=2 -DRES1=2 -DMAX
 
 /*run a version of this wim without the experiment py file using 
 ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round
-./sim 1 5 0 3 32 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 5000
+./sim 1 5 0 3 64 4 4 1 10000 60 100 0.01 0.001 0.2 3 2 0 5000
 
 */
 
-
+//This version I make it so that assigning matchups doesn't use sin and cos. 
 #define NOMINMAX
 #include <fstream>
 #include <thread>
@@ -46,8 +39,7 @@ clang++ -g -DP00=1 -DP01=5 -DP10=0 -DP11=3.3 -DGRIDN=512 -DRES0=2 -DRES1=2 -DMAX
 #include <cstdlib>
 #include <memory>
 #include <array>
-#include<omp.h>
-#include "RandomGenerator/Xoshiro.hpp" 
+#include "RandomGenerator/Xoshiro.hpp" //random number generator header library from https://www.pcg-random.org/download.html 
 using namespace std;
 
 /* ---------------------------
@@ -195,16 +187,23 @@ struct Memory1 {
     Move startMove;
     Move prevMove;
     array<double,4> rule;
+    double score;
+    string name;
+    double mutationRate;
 
-    Memory1(Move _start = COOP):
+    Memory1(Move _start = COOP, double _mutationRate=0.0):
         startMove(_start),
         prevMove(startMove),
-        rule{0.0,0.0,0.0,0.0}
+        rule{0.0,0.0,0.0,0.0},
+        mutationRate(_mutationRate),
+        score(0.0),
+        name("MemoryN")
     {}
 
     virtual void startup(Move _start) {
         this->startMove = _start;
         this->prevMove = _start;
+        this->score = 0.0;
     }
 
     int playMove(int theirPrev, double seed, int roundNum) { //I wonder what the branch mispredictions are like
@@ -224,10 +223,13 @@ struct Memory1 {
     }
 
     void reset() {
+        score = 0.0;
         prevMove = startMove;
     }
 
-
+    virtual string repr() const {
+        return name;
+    }
 
     void setRule(const array<double, 4> &r) {
         rule[0] = r[0];
@@ -239,6 +241,7 @@ struct Memory1 {
 
 struct BLANK : public Memory1 {
     BLANK(Move start = COOP) : Memory1(start) {
+        name = "BLANK";
         rule[0] = 0.0;
         rule[1] = 0.0;
         rule[2] = 0.0;
@@ -248,42 +251,11 @@ struct BLANK : public Memory1 {
     }
 };
 
-struct Random16{
-
-    uint64_t normalize; //this will be the value of 16 bits of ones. it will be computed at compile time. 
-    uint64_t currentRandomNumber;
-    bool generateNew;
-    int bitsAvailable;
-    XoshiroCpp::Xoroshiro128Plus local_rng;
-
- 
-    Random16(int seed):
-        local_rng(seed){
-        normalize = ((uint64_t)(-1))>>48; //this will be the value of 16 bits of ones. it will be computed at compile time. 
-        currentRandomNumber = 0;
-        bitsAvailable=0;
-        
-    }
-
-    float generate (){
-        if (bitsAvailable==0){
-            currentRandomNumber = local_rng();
-            bitsAvailable = 64;
-        }
-        int toReturn = ((uint64_t)currentRandomNumber)>>(bitsAvailable-16);
-        bitsAvailable-=16;
-        int shiftAmount = 64-bitsAvailable;
-        currentRandomNumber = ((uint64_t)(currentRandomNumber<<shiftAmount))>>shiftAmount;
-        return (float)toReturn/(float)normalize;
-    }
-    
-};
-
 /* ---------------------------
 Grid generation
 --------------------------- */
 
-using AgentGrid = vector<vector<Memory1>>;
+using AgentGrid = vector<vector<shared_ptr<Memory1>>>;
 
 // blankGrid(N, res, maxN=1, seed)
 AgentGrid blankGrid(int N, pair<int,int> res, unsigned seed = 0, double mutationRate=0.0) {
@@ -305,9 +277,9 @@ AgentGrid blankGrid(int N, pair<int,int> res, unsigned seed = 0, double mutation
         paramMaps[k][i][j] += 1;
         paramMaps[k][i][j] /= 2.0;
     }
-    AgentGrid grid(N, vector<Memory1>(N)); //would it be a good idea to dynamically allocate this so that it is not copying a massive datastructure?
+    AgentGrid grid(N, vector<shared_ptr<Memory1>>(N)); //would it be a good idea to dynamically allocate this so that it is not copying a massive datastructure?
     for (int i=0;i<N;++i) for (int j=0;j<N;++j) {
-        auto ag = BLANK(COOP);
+        auto ag = make_shared<BLANK>(COOP);
         // create rule vector of length 4. The python did: setRule([i**2 for i in list(paramMaps[:,idr,idc])])
         // paramMaps[:,idr,idc] is "number" values — they square them.
         array<double,4> ruleVals;
@@ -322,7 +294,8 @@ AgentGrid blankGrid(int N, pair<int,int> res, unsigned seed = 0, double mutation
             if (ruleVals[k] < 0.0) ruleVals[k] = 0.0;
             if (ruleVals[k] > 1.0) ruleVals[k] = 1.0;
         }
-        ag.setRule(ruleVals);
+        ag->setRule(ruleVals);
+        ag->mutationRate = mutationRate;//paramMaps[4][i][j];
         grid[i][j] = ag;
     }
     return grid;
@@ -391,98 +364,288 @@ vector<vector<pair<int,int>>> pickOpponentsNew(const AgentGrid &agents) {
     return opp;
 }
 
-vector<vector<array<double,5>>> agentRuleSnapshot(const AgentGrid &agents, float mutationRate) {
+vector<vector<array<double,5>>> agentRuleSnapshot(const AgentGrid &agents) {
     int Y = agents.size();
     int X = agents[0].size();
 
     vector<vector<array<double,5>>> snap(Y, vector<array<double,5>>(X));
     for(int i=0; i<Y; ++i){
         for(int j=0; j<X; ++j) {
-            for(int k=0; k<4; ++k) snap[i][j][k] = agents[i][j].rule[k];
-            snap[i][j][4] = mutationRate;
+            for(int k=0; k<4; ++k) snap[i][j][k] = agents[i][j]->rule[k];
+            snap[i][j][4] = agents[i][j]->mutationRate;
         }
     }
     return snap;
 }
+void printPlayed(vector<vector<int>> played){
+    cout<<"printing score 2D array"<<endl;
+    for (int i=0;i<played.size();i++){
+        for(int j=0;j<played.size();j++){
+            cout<<played[i][j]<<", ";
+        }
+        cout<<endl;
+    }
+}
+void wrapRow(int tileRowIndex, int globalRowIndex, int tileStartX, int lastStart, int gxi, int txi, int endxi, int gridN, vector<vector<double>>& globalScoreTracker, vector<vector<int>>& globalPlayedTracker, vector<vector<double>>& threadScoreTracker, vector<vector<int>>& threadPlayedTracker){
+    if (tileStartX==0){ //top left corner of thread accumulator when it needs to wrap
+        globalScoreTracker[globalRowIndex][gridN-1]+=threadScoreTracker[tileRowIndex][txi];
+        threadScoreTracker[tileRowIndex][txi]=0;
+        globalPlayedTracker[globalRowIndex][gridN-1]+=threadPlayedTracker[tileRowIndex][txi];
+        threadPlayedTracker[tileRowIndex][txi]=0;
+        gxi+=1; //taking the left columb off of future loops because it needs to be wrapped
+        txi+=1;
+    }
+    if (tileStartX==lastStart){ //top right corner of thread accumulator when it needs to wrap
+        globalScoreTracker[globalRowIndex][0]+=threadScoreTracker[tileRowIndex][endxi-1]; //ednxi is the size of a dimension thread accumulator vector. it is decremented once i have wrapped because I am ignoring it. 
+        threadScoreTracker[tileRowIndex][endxi-1]=0;
+        globalPlayedTracker[globalRowIndex][0]+=threadPlayedTracker[tileRowIndex][endxi-1]; //ednxi is the size of a dimension thread accumulator vector. it is decremented once i have wrapped because I am ignoring it. 
+        threadPlayedTracker[tileRowIndex][endxi-1]=0;
+        endxi-=1;
+    }
+    for (int gx = gxi, tx=txi; tx<endxi;tx++,gx++){ //this doesn't touch the first or last column in case they need to be wrapped
+        globalScoreTracker[globalRowIndex][gx]+=threadScoreTracker[tileRowIndex][tx];
+        threadScoreTracker[tileRowIndex][tx]=0;
+    }
+    for (int gx = gxi, tx=txi; tx<endxi;tx++,gx++){ //this doesn't touch the first or last column in case they need to be wrapped
+        globalPlayedTracker[globalRowIndex][gx]+=threadPlayedTracker[tileRowIndex][tx];
+        threadPlayedTracker[tileRowIndex][tx]=0;
+    }
+}
 
-TorusResult torusTournament(AgentGrid& agentGrid, int iters, int rounds, int snaps, float evolutionRate, //could agentGrid be passed by reference?
-    float evolutionChance, float mutationRate) {
+void accumulate(vector<thread>& threads, vector<array<int,2>>& tileStartCoords, vector<vector<vector<double>>>& scoreTracker_threads,vector<vector<vector<int>>>& playedTracker_threads, vector<vector<double>>& scoreTracker,vector<vector<int>>& playedTracker,int gridN,int lastStart){
+    int numthreads = threads.size();
+    for (auto &th : threads){
+        if (th.joinable()){
+            th.join();
+        } 
+    } 
+    threads.clear();
 
-    constexpr int yLen = GRIDN;//(int)agentGrid.size();
-    constexpr int xLen = GRIDN;//(int)agentGrid[0].size();
-    constexpr int N = yLen * xLen;
+    // cout<<"accumulate called and starting global played tracker is ";
+    // printPlayed(playedTracker);
+    // cout<<endl<<endl;
+
+
+    for (int tid=0;tid<numthreads;tid++){
+        int tileStartY = tileStartCoords[tid][0];
+        int tileStartX = tileStartCoords[tid][1];
+
+        // cout<<"thread "<<tid<<" has start cord ("<<tileStartY<<","<<tileStartX<<"). its thread specific played tracker is below ";
+        // printPlayed(playedTracker_threads[tid]);
+        // cout<<endl;
+        
+        int gyi=tileStartY-1;  //these are the initial values to use in the loops below. //gy is the coordinate on the global accumulator grid, and ty is the cooresponding coordinate on the thread specific accumulator grid
+        int gxi=tileStartX-1;
+        int tyi = 0;
+        int txi=0;
+        int endyi=scoreTracker_threads[0].size();
+        int endxi=scoreTracker_threads[0].size();
+
+        //this is the math for the edge of the torus where a threads accumulator vector wraps off of the end of the global accumulator vector
+        if (tileStartY==0 ){ //top row 
+            wrapRow(0, gridN-1, tileStartX, lastStart, gxi, txi, endxi, gridN, scoreTracker, playedTracker, scoreTracker_threads[tid], playedTracker_threads[tid]);
+
+            wrapRow(0, gridN-1, tileStartX, lastStart, gxi, txi, endxi, gridN, scoreTracker, playedTracker, scoreTracker_threads[tid], playedTracker_threads[tid]);
+            tyi++;
+            gyi++;
+        }
+        if (tileStartY==lastStart){
+            wrapRow(endyi-1, 0, tileStartX, lastStart, gxi, txi, endxi, gridN, scoreTracker, playedTracker, scoreTracker_threads[tid], playedTracker_threads[tid]);
+            endyi--;
+        }
+        //by the time it gets here, anything that needed to be wrapped in both directions has already been wrapped. tyi, gyi, and edyi give the rows i need to deal with
+        //this loop has bad locality, but the alternative is to put an if condition in a way bigger loop, which would be more expensive i think 
+        if (tileStartX == 0){ //left col
+            for (int gy = gyi, ty=tyi; ty<endyi;ty++,gy++){ //this doesn't touch the first or last column in case they need to be wrapped. 
+                scoreTracker[gy][gridN-1]+=scoreTracker_threads[tid][ty][0];
+                scoreTracker_threads[tid][ty][0]=0;
+            }
+            //seperate loops for better locality
+            for (int gy = gyi, ty=tyi; ty<endyi;ty++,gy++){ //this doesn't touch the first or last column in case they need to be wrapped. 
+                playedTracker[gy][gridN-1]+=playedTracker_threads[tid][ty][0];
+                playedTracker_threads[tid][ty][0]=0;
+            }
+            txi++;
+            gxi++;
+        }
+        if (tileStartX==lastStart){ //right col
+            for (int gy = gyi, ty=tyi; ty<endyi;ty++,gy++){ //this doesn't touch the first or last column in case they need to be wrapped. 
+                scoreTracker[gy][0]+=scoreTracker_threads[tid][ty][endxi-1];
+                scoreTracker_threads[tid][ty][endxi-1]=0;
+            }
+            for (int gy = gyi, ty=tyi; ty<endyi;ty++,gy++){ //this doesn't touch the first or last column in case they need to be wrapped. 
+                playedTracker[gy][0]+=playedTracker_threads[tid][ty][endxi-1];
+                playedTracker_threads[tid][ty][endxi-1]=0;
+            }
+            endxi--;
+        }
+
+            
+        //This handles the interior of tile and any edges that are not also edges of the agent grid 
+        for (int gy = gyi,ty =tyi; ty<endyi; ty++,gy++){ //gy is the coordinate on the global accumulator grid, and ty is the cooresponding coordinate on the thread specific accumulator grid
+            for(int gx=gxi,tx=txi; tx<endxi; tx++,gx++){
+                scoreTracker[gy][gx]+=scoreTracker_threads[tid][ty][tx];
+                scoreTracker_threads[tid][ty][tx]=0;
+            }
+        }
+
+        for (int gy = gyi,ty =tyi; ty<endyi;gy++,ty++){ //gy is the coordinate on the global accumulator grid, and ty is the cooresponding coordinate on the thread specific accumulator grid
+            for(int gx=gxi,tx=txi; tx<endxi;gx++,tx++){
+                playedTracker[gy][gx]+=playedTracker_threads[tid][ty][tx];
+                playedTracker_threads[tid][ty][tx]=0;
+            }
+        }
+    }
+    // cout<<endl<<"after summing all the played trackers. the global played tracker is as follows"<<endl;
+    // printPlayed(playedTracker);
+    // cout<<endl<<endl<<endl<<endl;
+
+
+}
+
+
+
+
+
+TorusResult torusTournament(AgentGrid agentGrid, int iters, int rounds, int snaps, float evolutionRate, //could agentGrid be passed by reference?
+    float evolutionChance, float mutationRate, float inversionPercentage, int inversionRound, int tileSize) {
+
+    int yLen = (int)agentGrid.size();
+    int xLen = (int)agentGrid[0].size();
+    int N = yLen * xLen;
     TorusResult out;
     vector<vector<double>> totalScore(yLen, vector<double>(xLen, 0.0));
-    constexpr int snapEvery = ROUNDS+1;//max(1, ROUNDS / SNAPS);
+    int snapEvery;
+    if (snaps==0){
+        snapEvery=rounds+1;
+    }
+    else{
+        snapEvery = max(1, rounds / snaps);
+    }
     vector<vector<double>> paddedScore(yLen+2, vector<double>(xLen+2, 0.0));
-
-    vector<vector<array<double,4>>> newRules(yLen,vector<array<double,4>>(xLen,array<double,4>{}));
 
     setUpEndTime = chrono::high_resolution_clock::now();
 
-
-    for (int round=0; round<ROUNDS; ++round) {
-        
+    for (int round=0; round<rounds; ++round) {
+        if (round == inversionRound) {
+            //invertCentralBlock(agentGrid, inversionPercentage);
+        }
         // PLAY MATCHES
         auto matchups = pickOpponents(agentGrid);
         vector<vector<int>> playedTracker(yLen, vector<int>(xLen, 0));
         vector<vector<double>> scoreTracker(yLen, vector<double>(xLen, 0.0));
 
-        constexpr int tileSize = TILESIZE;
-        int maxThreads = omp_get_max_threads();
-        vector<vector<vector<double>>> scoreTracker_threads(maxThreads,
-            vector<vector<double>>(yLen, vector<double>(xLen, 0.0)));
-        vector<vector<vector<int>>> playedTracker_threads(maxThreads,
-            vector<vector<int>>(yLen, vector<int>(xLen, 0)));
-        
-        
-        #pragma omp parallel
-        {
+        // BEFORE launching threads: create deterministic thread seeds and decide nThreads
+        int nThreads = std::min(static_cast<int>(std::thread::hardware_concurrency()), (int) yLen);
+        if (nThreads < 1) nThreads = 1;
+        //nThreads=1;
 
-            Random16 generate16(10);
-            int threadId = omp_get_thread_num();
-            
+        // // Create thread seeds deterministically using global_rng (seeded in main)
+        // vector<uint64_t> thread_seeds(nThreads);
+        // for (int t = 0; t < nThreads; ++t) {
+        //     thread_seeds[t] = global_rng(); // deterministic sequence
+        // }
 
-            //this is the main simulation loop. This SHOULD take the majority of the time
-            #pragma omp for
-            for (int tiley=0;tiley<yLen;tiley+=tileSize){
-                for (int tilex=0;tilex<xLen;tilex+=tileSize){
-                    for (int idy=tiley; idy<(tiley+tileSize);idy++){
-                        for(int idx=tilex;idx<(tilex+tileSize);idx++){
-                            auto match = matchups[idy][idx];
-                            auto a1 = agentGrid[idy][idx];
-                            auto a2 = agentGrid[match.second][match.first];
+        // Prepare per-thread accumulators
 
-                            playedTracker_threads[threadId][idy][idx] += 1;
-                            playedTracker_threads[threadId][match.second][match.first] += 1;
+        vector<vector<vector<double>>> scoreTracker_threads(nThreads, //initialize this with the correct number. might be num threads or tile size?
+            vector<vector<double>>(tileSize+2, vector<double>(tileSize+2, 0.0)));
+        vector<vector<vector<int>>> playedTracker_threads(nThreads,
+            vector<vector<int>>(tileSize+2, vector<int>(tileSize+2, 0))); //each tile is dependent on the neighbors in either direction. (1,1) in the accumulator is the coordinate of (startY, startX) 
 
-                            for (int n = 0; n < ITERS; ++n) {
-                                unsigned long long a1prev = a1.prevMove;
-                                unsigned long long a2prev = a2.prevMove;
-                                int a1move = a1.playMove(a2prev, generate16.generate(), n);
-                                int a2move = a2.playMove(a1prev, generate16.generate(), n);
-                                // accumulate into thread-local arrays
-                                scoreTracker_threads[threadId][idy][idx] += payoffMatrix[a1move][a2move];
-                                scoreTracker_threads[threadId][match.second][match.first] += payoffMatrix[a2move][a1move];
-                            }
-                            a1.reset();
-                            a2.reset();
+        // Worker now receives thread id and seed; 
+        auto worker = [&](int t_id, int rngSeed, int startY, int startX, int endY, int endX) {
+            XoshiroCpp::Xoroshiro128Plus local_rng(rngSeed); //Question: do you really need 64 bits of randomness? and/or could a thread use smaller parts of a random number before generating a new one. 
+            std::uniform_real_distribution<double> unif(0.0, 1.0);
+            auto local_uniform01 = [&](){ return unif(local_rng); };
 
-                        }
+            // local references to thread-local accumulators
+            auto &scoreTracker_local = scoreTracker_threads[t_id];
+            auto &playedTracker_local = playedTracker_threads[t_id];
+
+            for (int idy = startY; idy < endY; ++idy) {
+                for (int idx = startX; idx < endX; ++idx) { //endY is exclusive
+                    
+                    pair<int,int> match = matchups[idy][idx];
+                    auto a1 = agentGrid[idy][idx];
+                    auto a2 = agentGrid[match.second][match.first];
+
+                    int localMatchCoordY = match.second;
+                    if (localMatchCoordY<startY){
+                        localMatchCoordY=endY;
                     }
+                    else if(localMatchCoordY>endY){
+                        localMatchCoordY=startY-1;
+                    }
+                    int localMatchCoordX = match.first;
+                    if (localMatchCoordX<startX){
+                        localMatchCoordX=endX;
+                    }
+                    else if(localMatchCoordX>endX){
+                        localMatchCoordX=startX-1;
+                    }
+
+                    // increment played count for both players in THREAD-LOCAL arrays
+                    
+                    playedTracker_local[idy-startY+1][idx-startX+1] += 1; 
+                    playedTracker_local[localMatchCoordY-startY+1][localMatchCoordX-startX+1] += 1; //TODO THE MATCHUPS WRAP!! I have to unwrap them - oh wait, I can must make matchups return the unwrapped version too. I should probably have two version of the worker. One to be called on tiles with no edges to save work
+
+                    for (int n = 0; n < iters; ++n) {
+                        unsigned long long a1prev = a1->prevMove;
+                        unsigned long long a2prev = a2->prevMove;
+                        int a1move = a1->playMove(a2prev, local_uniform01(), n);
+                        int a2move = a2->playMove(a1prev, local_uniform01(), n);
+                        // accumulate into thread-local arrays
+                        scoreTracker_local[idy-startY+1][idx-startX+1] += payoffMatrix[a1move][a2move];
+                        scoreTracker_local[localMatchCoordY-startY+1][localMatchCoordX-startX+1] += payoffMatrix[a2move][a1move];
+                    }
+                    a1->reset();
+                    a2->reset();
                 }
             }
+        };
+
+        
+       
+        vector<thread> threads;
+        vector<array<int,2>> tileStartCoords(nThreads);
+        int threadid=0;
+        int currentThreads=0;
+        int numThreadsMadeSoFar=0;
+        int lastStart = agentGrid.size()-tileSize;
+        for (int startY=0;startY<=lastStart;startY+=tileSize){
+            for (int startX = 0; startX<=lastStart;startX+=tileSize) {
+                // std::cout<<"about to make thread num "<<numThreadsMadeSoFar<<endl;
+                threads.emplace_back(worker,threadid,global_rng(),startY,startX,startY+tileSize,startX+tileSize);
+                //  std::cout<<"made thread num "<<numThreadsMadeSoFar<<endl;
+                 numThreadsMadeSoFar++;
+                tileStartCoords[currentThreads][0]=startY;                     //tile startCoords hold the coordinate int the global grid that (1,1) in the threads accumulator vector will map to
+                tileStartCoords[currentThreads][1]=startX;
+                currentThreads++;
+                threadid++;
+                if (currentThreads==nThreads){
+                    accumulate(threads, tileStartCoords, scoreTracker_threads, playedTracker_threads, scoreTracker, playedTracker,xLen,lastStart);
+                    threadid=0;
+                    currentThreads=0;
+                }
+            }
+        }
+        if (threads.size()>0){ 
+            accumulate(threads, tileStartCoords, scoreTracker_threads, playedTracker_threads, scoreTracker, playedTracker,xLen,lastStart);
         }
         
+        
 
-        for (int t=0; t<playedTracker_threads.size(); ++t) {
-            for (int i=0;i<yLen;++i) {
-                for (int j=0;j<xLen;++j) {
-                    playedTracker[i][j] += playedTracker_threads[t][i][j];
-                    scoreTracker[i][j] += scoreTracker_threads[t][i][j];
-                }
-            }
-        }
+        
+
+        // for (int t=0; t<nThreads; ++t) {
+        //     for (int i=0;i<yLen;++i) {
+        //         for (int j=0;j<xLen;++j) {
+        //             playedTracker[i][j] += playedTracker_threads[t][i][j];
+        //             scoreTracker[i][j] += scoreTracker_threads[t][i][j];
+        //         }
+        //     }
+        // }
 
         // Normalize by playedTracker (avoid div by zero)
         for (int i=0;i<yLen;++i) for (int j=0;j<xLen;++j) {
@@ -490,12 +653,10 @@ TorusResult torusTournament(AgentGrid& agentGrid, int iters, int rounds, int sna
             totalScore[i][j] += scoreTracker[i][j];
         }
 
-       
-
         // Evolution
-        // AgentGrid newGrid = agentGrid; // shallow copy of shared_ptrs
+        AgentGrid newGrid = agentGrid; // shallow copy of shared_ptrs
         double shiftPercentage = 0.2;
-        //double mutationRate = 0.01;
+        double mutationRate = 0.01;
         // build padded score toroidally
         for (int i=0;i<yLen;++i) for (int j=0;j<xLen;++j) paddedScore[i+1][j+1] = scoreTracker[i][j];
         // wrap edges
@@ -538,47 +699,41 @@ TorusResult torusTournament(AgentGrid& agentGrid, int iters, int rounds, int sna
                 if (ux < 0) ux = xLen + ux;
                 else if (ux >= xLen) ux -= 1;
 
-                //can probably combine these loops? later problem. 
-                //(uy,ux) is the best in the grid of 3. The thing to evolve from. it can't have already evolved. 
                 // shift
-                vector<double> ruleShift(agentGrid[idy][idx].rule.size(), 0.0);
+                vector<double> ruleShift(agentGrid[idy][idx]->rule.size(), 0.0);
                 if (evolveVec[count] < chance) {
-                    auto &src = agentGrid[uy][ux].rule;
-                    auto &dst = agentGrid[idy][idx].rule;
+                    auto &src = agentGrid[uy][ux]->rule;
+                    auto &dst = agentGrid[idy][idx]->rule;
                     for (size_t k=0;k<dst.size();++k) ruleShift[k] = (src[k] - dst[k]) * shiftPercentage;
                 }
                 // mutate
-                vector<double> ruleShift2(agentGrid[idy][idx].rule.size(), 0.0);
+                vector<double> ruleShift2(agentGrid[idy][idx]->rule.size(), 0.0);
                 for (size_t k=0;k<ruleShift2.size();++k) {
-                    ruleShift2[k] = ((uniform01() * 2.0) - 1.0) * MUTATIONRATE;
+                    ruleShift2[k] = ((uniform01() * 2.0) - 1.0) * mutationRate;
                 }
-                array<double,4>& oldRule = agentGrid[idy][idx].rule;
-                array<double,4>& newRule = newRules[idy][idx];
-                for (size_t k=0;k<oldRule.size();++k){
-                    newRule[k] = oldRule[k] + ruleShift[k] + ruleShift2[k];
-                }
+                array<double,4> newRule = agentGrid[idy][idx]->rule;
+                for (size_t k=0;k<newRule.size();++k) newRule[k] = newRule[k] + ruleShift[k] + ruleShift2[k];
                 for (size_t k=0;k<newRule.size();++k) {
                     if (newRule[k] < 0.0) newRule[k] = 0.0;
                     if (newRule[k] > 1.0) newRule[k] = 1.0;
                 }
                 // assign to newGrid copy
                 // make a fresh BLANK agent to hold new rule while preserving other meta
-                
+                auto newAgent = make_shared<BLANK>(agentGrid[idy][idx]->startMove);
+                newAgent->name = agentGrid[idy][idx]->name;
+                newAgent->rule = newRule;
+                newAgent->startMove = agentGrid[idy][idx]->startMove;
+                newAgent -> mutationRate = agentGrid[idy][idx]->mutationRate;
+                newAgent->prevMove = agentGrid[idy][idx]->prevMove;
+                newGrid[idy][idx] = newAgent;
             }
-
         }
+        agentGrid = newGrid;
 
-        for (int idy=0;idy<yLen;idy++){
-            for(int idx=0;idx<xLen;idx++){
-                agentGrid[idx][idy].rule = newRules[idx][idy]; //this is a full coppy. NOT just coppying pointers. 
-            }
-        }
-
-
-        if (round == 1 || ((round % snapEvery) == 0 && (round / snapEvery) > 0)) {
+        if ((round == 1 && snaps!=0) || ((round % snapEvery) == 0 && (round / snapEvery) > 0)) {
             // push snapshots
             out.scoreSnaps.push_back(totalScore);
-            auto ruleSnap = agentRuleSnapshot(agentGrid,mutationRate);
+            auto ruleSnap = agentRuleSnapshot(agentGrid);
             // For storage simplicity, push ruleSnaps as flattened vectors per cell
             // but we'll convert to vector<vector<vector<double>>> where innermost is concatenated rule vector per cell
             size_t ruleLen = 5;//(int)agentGrid[0][0]->rule.size();
@@ -592,6 +747,12 @@ TorusResult torusTournament(AgentGrid& agentGrid, int iters, int rounds, int sna
             out.nonCumulativeScoreSnaps.push_back(scoreTracker);
             //cout << "progress: " << (round / snapEvery) << " / "<<snaps<<"\n";
         }
+        // zero out global trackers 
+        for (int i=0;i<yLen;++i) for (int j=0;j<xLen;++j) {
+            playedTracker[i][j] = 0;
+            scoreTracker[i][j] = 0.0;
+        }
+        
     } // end rounds
 
     out.totalScore = totalScore;
@@ -679,49 +840,46 @@ void write_nonCumulative_csv(const vector<vector<vector<double>>> &ncs, const st
 main (testing)
 --------------------------- */
 
-// -DP00={self.payoffMatrix[0][0]}",f"-DP01={self.payoffMatrix[0][1]}",f"-DP10={self.payoffMatrix[1][0]}",f"-DP11={self.payoffMatrix[1][1]}",
-//                       f"-DGRIDN={self.gridN}",f"-DRES0={self.res[0]}",f"-DRES1={self.res[1]}",f"-DMAXN={self.maxN}",f"-DROUNDS={self.rounds}",f"-DITERS={self.iters}",
-//                       f"-DSNAPS={self.snaps}",f"-DEVOLUTIONRATE={self.evolutionRate}",f"-DMUTATIONRATE={self.mutationRate}",f"-DEVOLUTIONCHANCE={self.evolutionChance}",
-//                       f"-DGRIDSEED={self.gridSeed}",f"-DPLAYSEED={self.playSeed}",f"-DSUBPATH={subPath}",f"-DTILESIZE={self.tileSize}"
+int main(int argc, char** argv) {
 
-int main() {
     auto setUpStartTime = std::chrono::high_resolution_clock::now();
-    // if (argc < 6) {
-    //     cerr << "Usage: ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round\n";
-    //     return 1;
-    // }
+    if (argc < 6) {
+        cerr << "Usage: ./sim p00 p01 p10 p11 gridN res0 res1 maxN rounds iters snaps evolutionRate mutationRate evolutionChance seed1 seed2 inversionpercent inversion round\n";
+        return 1;
+    }
 
     payoffMatrix = {
-        {P00, P01}, //atof interprets the strings as floats
-        {P10, P11}
+        {atof(argv[1]), atof(argv[2])}, //atof interprets the strings as floats
+        {atof(argv[3]), atof(argv[4])}
     };
 
 
-    const int gridN = GRIDN; //atoi interterprets strings as integers
-    if (gridN%32!=0){
-        throw std::runtime_error("gridN must be a multiple of 32");
-    }
-    pair<int,int> res = {RES0,RES1}; //what exactly is res?
-    const int maxN = MAXN; //what is maxN? how does it relate to gridN
-    constexpr int rounds = ROUNDS;
-    int iters = ITERS;
-    int snaps = SNAPS;
+    int gridN = atoi(argv[5]); //atoi interterprets strings as integers
+    pair<int,int> res = {atoi(argv[6]),atoi(argv[7])}; //what exactly is res?
+    int maxN = atoi(argv[8]); //what is maxN? how does it relate to gridN
+    int rounds = atoi(argv[9]);
+    int iters = atoi(argv[10]);
+    int snaps = atoi(argv[11]);
 
-    double evolutionRate = EVOLUTIONRATE; //what is evolution rate - it doesn't looke like it is ever used?
-    double mutationRate = MUTATIONRATE; //mutation rate randomly changes also the strategies a bit every round
-    double evolutionChance = EVOLUTIONCHANCE; //evolution Chance - change of adopting winner's strategy?
-    unsigned int gridSeed = (unsigned) GRIDSEED; //randomness for distributing agents
-    unsigned int playSeed = (unsigned) PLAYSEED; //randomness for playing
+    double evolutionRate = atof(argv[12]); //what is evolution rate - it doesn't looke like it is ever used?
+    double mutationRate = atof(argv[13]); //mutation rate randomly changes also the strategies a bit every round
+    double evolutionChance = atof(argv[14]); //evolution Chance - change of adopting winner's strategy?
+    unsigned int gridSeed = (unsigned) std::atoi(argv[15]); //randomness for distributing agents
+    unsigned int playSeed = (unsigned) std::atoi(argv[16]); //randomness for playing
     // global_rng.seed(playSeed);
     // grid_rng.seed(gridSeed);
+    double inversionPercentage = atof(argv[17]);//0; //what is inversion percentage and inversion round?
+    int inversionRound = atoi(argv[18]);//1;
+    int tileSize = atoi(argv[19]);
 
 
-    const std::string path = SUBPATH;
+
+    std::string path = argv[17];
 
     AgentGrid grid = blankGrid(gridN, res, gridSeed, mutationRate);
 
 
-    TorusResult resu = torusTournament(grid, iters, rounds, snaps, evolutionRate, evolutionChance, mutationRate); //should agentGrid be passed by reference?
+    TorusResult resu = torusTournament(grid, iters, rounds, snaps, evolutionRate, mutationRate, evolutionChance, inversionPercentage, inversionRound,tileSize);
 
     auto simulationEndTime = chrono::high_resolution_clock::now();
 
